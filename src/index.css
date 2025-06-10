@@ -1,0 +1,122 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 224 12% 16%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 12% 16%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 12% 16%;
+
+    --primary: 217 100% 61%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 13% 91%;
+    --secondary-foreground: 224 12% 16%;
+
+    --muted: 220 13% 91%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 41 100% 52%;
+    --accent-foreground: 0 0% 0%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 100% 61%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 224 12% 16%;
+    --foreground: 0 0% 98%;
+
+    --card: 224 12% 12%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 224 12% 12%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 217 100% 61%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 215 14% 26%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 215 14% 26%;
+    --muted-foreground: 217.9 10.6% 64.9%;
+
+    --accent: 41 100% 52%;
+    --accent-foreground: 0 0% 0%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 215 14% 26%;
+    --input: 215 14% 26%;
+    --ring: 217 100% 61%;
+
+    --sidebar-background: 224 12% 16%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 217 100% 61%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 14% 26%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 215 14% 26%;
+    --sidebar-ring: 217 100% 61%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-brand-bg text-brand-text;
+  }
+}
+
+@layer components {
+  .product-card {
+    @apply relative overflow-hidden rounded-lg bg-white shadow-md transition-all duration-300 hover:shadow-xl;
+  }
+  
+  .badge {
+    @apply inline-flex items-center rounded-full bg-brand-blue px-2.5 py-0.5 text-xs font-medium text-white;
+  }
+  
+  .price {
+    @apply text-lg font-bold text-brand-blue;
+  }
+  
+  .btn-primary {
+    @apply bg-brand-blue text-white transition-colors hover:bg-blue-600;
+  }
+  
+  .btn-secondary {
+    @apply bg-brand-yellow text-brand-text transition-colors hover:bg-amber-400;
+  }
+  
+  .btn-accent {
+    @apply bg-brand-orange text-white transition-colors hover:bg-orange-600;
+  }
+}
