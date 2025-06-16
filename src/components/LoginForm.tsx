@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 
 interface LoginFormProps {
   onSuccess: () => void;
@@ -12,44 +13,48 @@ interface LoginFormProps {
 
 const LoginForm = ({ onSuccess }: LoginFormProps) => {
   const { toast } = useToast();
+  const { login } = useAuth(); // Use the login function from AuthContext
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Simulate login API call
-    setTimeout(() => {
-      if (email && password) {
-        // For demo purposes, set admin login based on email
-        const isAdmin = email.includes('admin');
-        
-        // Store login state in localStorage
-        localStorage.setItem('isLoggedIn', 'true');
-        localStorage.setItem('isAdmin', isAdmin ? 'true' : 'false');
-        
-        toast({
-          title: "Login successful",
-          description: `Welcome back${isAdmin ? ' admin' : ''}!`
-        });
-        
-        // If admin, redirect to admin, else use the default onSuccess
-        if (isAdmin) {
-          window.location.href = '/admin';
-        } else {
-          onSuccess();
-        }
-      } else {
-        toast({
-          title: "Login failed",
-          description: "Please check your email and password.",
-          variant: "destructive"
-        });
+    try {
+      if (!email || !password) {
+        throw new Error('Please enter both email and password');
       }
+      
+      // Use the login function from AuthContext instead of directly calling userService
+      await login(email, password);
+      
+      // Get user role from localStorage
+      const userRole = localStorage.getItem('userRole');
+      const isAdmin = userRole === 'admin';
+      
+      toast({
+        title: "Login successful",
+        description: `Welcome back!`
+      });
+      
+      // If admin, redirect to admin, else use the default onSuccess
+      if (isAdmin) {
+        window.location.href = '/admin';
+      } else {
+        onSuccess();
+      }
+    } catch (error) {
+      console.error('Login failed:', error);
+      toast({
+        title: "Login failed",
+        description: error instanceof Error ? error.message : "Please check your email and password.",
+        variant: "destructive"
+      });
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   return (

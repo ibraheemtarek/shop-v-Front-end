@@ -97,6 +97,36 @@ class ProductService {
   async deleteProduct(id: string): Promise<{ message: string }> {
     return api.delete<{ message: string }>(`/api/products/${id}`);
   }
+
+  /**
+   * Upload a single product image (admin only)
+   */
+  async uploadProductImage(id: string, imageFile: File): Promise<Product> {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    
+    return api.uploadFile<Product>(`/api/products/${id}/image`, formData);
+  }
+
+  /**
+   * Upload multiple product images (admin only)
+   */
+  async uploadProductImages(id: string, imageFiles: File[]): Promise<Product> {
+    const formData = new FormData();
+    
+    imageFiles.forEach((file, index) => {
+      formData.append('images', file);
+    });
+    
+    return api.uploadFile<Product>(`/api/products/${id}/images`, formData);
+  }
+
+  /**
+   * Delete a product image (admin only)
+   */
+  async deleteProductImage(productId: string, imageIndex: number): Promise<Product> {
+    return api.delete<Product>(`/api/products/${productId}/image/${imageIndex}`);
+  }
 }
 
 export default new ProductService();

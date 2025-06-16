@@ -52,7 +52,7 @@ class CartService {
    * Clear cart
    */
   async clearCart(): Promise<{ message: string; cart: Cart }> {
-    return api.delete<{ message: string; cart: Cart }>('/cart');
+    return api.delete<{ message: string; cart: Cart }>('/api/cart');
   }
 }
 

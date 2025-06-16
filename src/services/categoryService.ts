@@ -81,6 +81,33 @@ class CategoryService {
       }
     }
   }
+
+  /**
+   * Upload a category image (admin only)
+   */
+  async uploadCategoryImage(id: string, imageFile: File): Promise<Category> {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    
+    try {
+      return await api.uploadFile<Category>(`/api/categories/${id}/image`, formData);
+    } catch (error) {
+      console.error('Failed to upload category image via API:', error);
+      throw new Error('Failed to upload category image');
+    }
+  }
+
+  /**
+   * Delete a category image (admin only)
+   */
+  async deleteCategoryImage(id: string): Promise<Category> {
+    try {
+      return await api.delete<Category>(`/api/categories/${id}/image`);
+    } catch (error) {
+      console.error('Failed to delete category image via API:', error);
+      throw new Error('Failed to delete category image');
+    }
+  }
 }
 
 export default new CategoryService();

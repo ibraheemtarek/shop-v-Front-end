@@ -44,9 +44,14 @@ export interface Order {
   isDelivered: boolean;
   deliveredAt?: string;
   orderNumber: string;
-  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded';
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RefundData {
+  reason: string;
+  amount?: number; // Optional for partial refunds
 }
 
 export interface CreateOrderData {
@@ -115,6 +120,13 @@ class OrderService {
    */
   async updateOrderStatus(id: string, status: Order['status']): Promise<Order> {
     return api.put<Order>(`/api/orders/${id}/status`, { status });
+  }
+
+  /**
+   * Process refund for order (admin only)
+   */
+  async refundOrder(id: string, refundData: RefundData): Promise<Order> {
+    return api.put<Order>(`/api/orders/${id}/refund`, refundData);
   }
 }
 

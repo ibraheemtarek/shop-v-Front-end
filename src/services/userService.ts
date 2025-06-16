@@ -1,5 +1,4 @@
 import api from './api';
-import mockData from './mockData';
 import { Product } from './productService';
 
 export interface User {
@@ -42,6 +41,15 @@ export interface RegisterData {
   password: string;
 }
 
+export interface ForgotPasswordData {
+  email: string;
+}
+
+export interface ResetPasswordData {
+  token: string;
+  password: string;
+}
+
 /**
  * User API service
  */
@@ -58,44 +66,8 @@ class UserService {
    */
   async login(loginData: LoginData): Promise<AuthResponse> {
     try {
-      // For development/testing - simulate successful admin login
-      if (import.meta.env.DEV && 
-          loginData.email === 'admin@admin.com' && 
-          loginData.password === 'admin123') {
-        
-        // Check if we already have a mock admin token
-        const existingToken = localStorage.getItem('token');
-        const existingRole = localStorage.getItem('userRole');
-        
-        if (existingToken && existingToken.startsWith('mock-admin-token') && existingRole === 'admin') {
-          console.log('Using existing mock admin token');
-          return {
-            _id: 'admin-mock-id',
-            firstName: 'Admin',
-            lastName: 'User',
-            email: 'admin@admin.com',
-            role: 'admin',
-            token: existingToken
-          };
-        }
-        
-        console.log('DEV MODE: Simulating successful admin login');
-        const mockToken = 'mock-admin-token-' + Date.now();
-        localStorage.setItem('token', mockToken);
-        localStorage.setItem('userRole', 'admin');
-        
-        return {
-          _id: 'admin-mock-id',
-          firstName: 'Admin',
-          lastName: 'User',
-          email: 'admin@admin.com',
-          role: 'admin',
-          token: mockToken
-        };
-      }
-      
       // Normal API login
-      const response = await api.post<AuthResponse>('/api/users/login', loginData);
+      const response = await api.post<AuthResponse>('/api/auth/login', loginData);
       
       // Save token to localStorage
       if (response.token) {
@@ -105,87 +77,35 @@ class UserService {
       return response;
     } catch (error) {
       console.error('Login failed:', error);
-      
-      // Special case for admin login in development
-      if (import.meta.env.DEV && 
-          loginData.email === 'admin@admin.com' && 
-          loginData.password === 'admin123') {
-        
-        console.log('API login failed, using mock admin login');
-        const mockToken = 'mock-admin-token-' + Date.now();
-        localStorage.setItem('token', mockToken);
-        localStorage.setItem('userRole', 'admin');
-        
-        return {
-          _id: 'admin-mock-id',
-          firstName: 'Admin',
-          lastName: 'User',
-          email: 'admin@admin.com',
-          role: 'admin',
-          token: mockToken
-        };
-      }
-      
       throw error;
     }
   }
 
   /**
-   * Logout user (client-side only)
+   * Refresh access token
    */
-  logout(): void {
-    localStorage.removeItem('token');
+  async refreshToken(): Promise<AuthResponse> {
+    return api.post<AuthResponse>('/api/auth/refresh', {});
+  }
+
+  /**
+   * Logout user
+   */
+  async logout(): Promise<void> {
+    try {
+      await api.post<{message: string}>('/api/auth/logout', {});
+    } finally {
+      // Always clear local storage regardless of server response
+      localStorage.removeItem('token');
+      localStorage.removeItem('userRole');
+    }
   }
 
   /**
    * Get user profile
    */
   async getUserProfile(): Promise<User> {
-    try {
-      return await api.get<User>('/api/users/profile');
-    } catch (error) {
-      console.error('Failed to fetch user profile from API, using mock data:', error);
-      
-      // Check for token to determine user type
-      const token = localStorage.getItem('token');
-      const userRole = localStorage.getItem('userRole');
-      
-      // If we have a mock admin token, return mock admin profile
-      if (token && token.startsWith('mock-admin-token') || userRole === 'admin') {
-        console.log('Using mock admin profile');
-        return {
-          _id: 'admin-mock-id',
-          firstName: 'Admin',
-          lastName: 'User',
-          email: 'admin@admin.com',
-          role: 'admin',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          wishlist: []
-        };
-      }
-      
-      // For regular users or if no token exists, return a generic mock user
-      console.log('Using mock regular user profile');
-      return {
-        _id: 'user-mock-id',
-        firstName: 'Test',
-        lastName: 'User',
-        email: 'user@example.com',
-        role: 'user',
-        address: {
-          street: '123 Test St',
-          city: 'Test City',
-          state: 'TS',
-          zipCode: '12345',
-          country: 'Test Country'
-        },
-        phone: '555-1234',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        wishlist: []
-      };
-    }
+    return api.get<User>('/api/users/profile');
   }
 
   /**
@@ -220,12 +140,23 @@ class UserService {
    * Get all users (admin only)
    */
   async getAllUsers(): Promise<User[]> {
-    try {
-      return await api.get<User[]>('/api/users');
-    } catch (error) {
-      console.error('Failed to fetch users from API, using mock data:', error);
-      return mockData.getUsers();
-    }
+    return api.get<User[]>('/api/users');
+  }
+
+  /**
+   * Request password reset
+   * @param data Email address to send reset link
+   */
+  async forgotPassword(data: ForgotPasswordData): Promise<{ message: string }> {
+    return api.post<{ message: string }>('/api/users/forgot-password', data);
+  }
+
+  /**
+   * Reset password using token
+   * @param data Token and new password
+   */
+  async resetPassword(data: ResetPasswordData): Promise<{ message: string }> {
+    return api.post<{ message: string }>('/api/users/reset-password', data);
   }
 
   /**

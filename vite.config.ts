@@ -10,9 +10,11 @@ export default defineConfig(({ mode }) => ({
     port: 8087,
     proxy: {
       '/api': {
-        target: 'http://localhost:5001',
+        target: 'https://shop-v-backend-production.up.railway.app',
         changeOrigin: true,
-        secure: false,
+        secure: true,
+        rewrite: (path) => path,
+        cookieDomainRewrite: 'localhost',
       },
     },
   },

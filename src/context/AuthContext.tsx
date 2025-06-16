@@ -19,31 +19,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // No user persistence function here
+
   // Check if user is already logged in
   useEffect(() => {
     const token = localStorage.getItem('token');
+    // No need to get stored user data
     
     if (token) {
-      // Get user data if token exists
+      // No cached user data handling
+      
+      // Get fresh user data if token exists
       userService.getUserProfile()
         .then((userData) => {
-          setUser({
+          const authResponse: AuthResponse = {
             _id: userData._id,
             firstName: userData.firstName,
             lastName: userData.lastName,
             email: userData.email,
             role: userData.role,
             token,
-          });
+          };
+          setUser(authResponse);
         })
-        .catch(() => {
-          // If token is invalid, remove it
+        .catch((err) => {
+          // If token is invalid, remove it and user data
+          console.error('Failed to fetch user profile:', err);
           localStorage.removeItem('token');
+          setUser(null);
         })
         .finally(() => {
           setLoading(false);
         });
     } else {
+      // No token, make sure user state is null
+      setUser(null);
       setLoading(false);
     }
   }, []);
@@ -54,7 +64,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       setError(null);
       const userData = await userService.login({ email, password });
+      
+      // Store user role in localStorage
+      if (userData && userData.role) {
+        localStorage.setItem('userRole', userData.role);
+      }
+      
       setUser(userData);
+      console.log('Login successful, user data:', userData);
     } catch (err: any) {
       setError(err.message || 'Failed to login');
     } finally {

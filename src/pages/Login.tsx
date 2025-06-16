@@ -1,14 +1,32 @@
 
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
 import LoginForm from '@/components/LoginForm';
 import { Button } from '@/components/ui/button';
+import { useEffect, useState } from 'react';
 
 const Login = () => {
   const navigate = useNavigate();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  
+  useEffect(() => {
+    // Check if user has a token (is authenticated)
+    const token = localStorage.getItem('token');
+    setIsAuthenticated(!!token);
+  }, []);
   
   const handleLoginSuccess = () => {
     navigate('/');
   };
+  
+  // If authenticated, redirect to home page
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+  
+  // Show loading state while checking authentication
+  if (isAuthenticated === null) {
+    return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-brand-bg p-4">

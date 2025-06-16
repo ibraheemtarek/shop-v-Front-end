@@ -8,8 +8,37 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { User, Package, ShoppingCart, Heart, LogOut, Settings, CreditCard, X } from 'lucide-react';
+import { User, Package, ShoppingCart, Heart, LogOut, Settings, CreditCard, X, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import UserService, { User as UserType } from '@/services/userService';
+
+// Use the User type from userService - no need to redefine it
+// Adding a placeholder avatar helper since User doesn't include avatar
+interface WishlistItem {
+  id: string;
+  name: string;
+  price: number;
+  image: string;
+}
+
+// The User type from userService doesn't have an avatar field
+
+// Form data interface for profile updates
+interface ProfileFormData {
+  name: string;
+  email: string;
+  address: {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+    country: string;
+  };
+}
+
+const getAvatarUrl = (user: UserType) => {
+  return `https://ui-avatars.com/api/?name=${user.firstName}+${user.lastName}&background=random`;
+};
 
 const Account = () => {
   const location = useLocation();
@@ -18,6 +47,11 @@ const Account = () => {
   const [activeTab, setActiveTab] = useState(tabParam || 'profile');
   const { toast } = useToast();
   
+  // State for user data with loading and error handling
+  const [user, setUser] = useState<UserType | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   // Update active tab when URL changes
   useEffect(() => {
     if (tabParam) {
@@ -25,20 +59,25 @@ const Account = () => {
     }
   }, [tabParam]);
   
-  // Mock user data
-  const user = {
-    id: '1',
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    avatar: 'https://i.pravatar.cc/150?img=3',
-    address: {
-      street: '123 Main St',
-      city: 'New York',
-      state: 'NY',
-      zip: '10001',
-      country: 'USA'
-    }
-  };
+  // Fetch user data from API
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        // Use the UserService instead of direct API call
+        const userData = await UserService.getUserProfile();
+        setUser(userData);
+      } catch (err) {
+        console.error('Failed to fetch user data:', err);
+        setError('Failed to load user data. Please try again later.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchUserData();
+  }, []);
 
   // Mock orders
   const orders = [
@@ -66,7 +105,7 @@ const Account = () => {
   ];
 
   // Mock wishlist
-  const [wishlist, setWishlist] = useState([
+  const [wishlist, setWishlist] = useState<WishlistItem[]>([
     {
       id: '1',
       name: 'Wireless Bluetooth Headphones',
@@ -81,11 +120,46 @@ const Account = () => {
     }
   ]);
 
-  const handleSaveProfile = () => {
-    toast({
-      title: "Profile updated",
-      description: "Your profile has been updated successfully."
-    });
+  const handleSaveProfile = async (formData: ProfileFormData) => {
+    try {
+      setIsLoading(true);
+      
+      // Process form data to match User interface
+      const nameParts = formData.name.split(' ');
+      const updateData: Partial<UserType> = {
+        firstName: nameParts[0] || '',
+        lastName: nameParts.slice(1).join(' ') || '',
+        email: formData.email,
+        address: {
+          street: formData.address.street,
+          city: formData.address.city,
+          state: formData.address.state,
+          zipCode: formData.address.zip, // Note: API expects zipCode, not zip
+          country: formData.address.country
+        }
+      };
+      
+      // Use UserService to update profile
+      const response = await UserService.updateUserProfile(updateData);
+      
+      // Refresh user data to ensure we have the latest
+      const updatedUser = await UserService.getUserProfile();
+      setUser(updatedUser);
+      
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been updated successfully."
+      });
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+      toast({
+        title: "Update failed",
+        description: "Failed to update your profile. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleRemoveFromWishlist = (id: string) => {
@@ -96,7 +170,7 @@ const Account = () => {
     });
   };
 
-  const handleAddToCart = (item: any) => {
+  const handleAddToCart = (item: WishlistItem) => {
     toast({
       title: "Added to cart",
       description: `${item.name} has been added to your cart.`
@@ -137,15 +211,35 @@ const Account = () => {
             <Card className="h-fit lg:col-span-1">
               <CardContent className="pt-6">
                 <div className="flex flex-col items-center mb-6">
-                  <div className="w-20 h-20 rounded-full overflow-hidden mb-2">
-                    <img 
-                      src={user.avatar} 
-                      alt={user.name} 
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <h3 className="text-lg font-medium">{user.name}</h3>
-                  <p className="text-sm text-muted-foreground">{user.email}</p>
+                  {isLoading ? (
+                    <div className="flex flex-col items-center justify-center h-40">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                      <p className="text-sm text-muted-foreground">Loading user data...</p>
+                    </div>
+                  ) : error ? (
+                    <div className="flex flex-col items-center text-center p-4">
+                      <p className="text-sm text-destructive mb-2">{error}</p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => window.location.reload()}
+                      >
+                        Try Again
+                      </Button>
+                    </div>
+                  ) : user && (
+                    <>
+                      <div className="w-20 h-20 rounded-full overflow-hidden mb-2">
+                        <img 
+                          src={getAvatarUrl(user)} 
+                          alt={user.firstName + ' ' + user.lastName} 
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <h3 className="text-lg font-medium">{user.firstName + ' ' + user.lastName}</h3>
+                      <p className="text-sm text-muted-foreground">{user.email}</p>
+                    </>
+                  )}
                 </div>
                 
                 <nav>
@@ -222,50 +316,85 @@ const Account = () => {
                     <CardTitle>Profile Information</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleSaveProfile(); }}>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="name">Full Name</Label>
-                          <Input id="name" defaultValue={user.name} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="email">Email</Label>
-                          <Input id="email" type="email" defaultValue={user.email} />
-                        </div>
+                    {isLoading ? (
+                      <div className="flex flex-col items-center justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                        <p className="text-sm text-muted-foreground">Loading your profile...</p>
                       </div>
-                      
-                      <Separator className="my-4" />
-                      
-                      <div>
-                        <h3 className="text-lg font-medium mb-4">Shipping Address</h3>
+                    ) : error ? (
+                      <div className="text-center py-8">
+                        <p className="text-destructive mb-4">{error}</p>
+                        <Button 
+                          onClick={() => window.location.reload()} 
+                          variant="outline"
+                        >
+                          Try Again
+                        </Button>
+                      </div>
+                    ) : user && (
+                      <form className="space-y-4" onSubmit={(e) => { 
+                        e.preventDefault();
+                        const formData = new FormData(e.currentTarget);
+                        const updatedProfile = {
+                          name: formData.get('name') as string,
+                          email: formData.get('email') as string,
+                          address: {
+                            street: formData.get('street') as string,
+                            city: formData.get('city') as string,
+                            state: formData.get('state') as string,
+                            zip: formData.get('zip') as string,
+                            country: formData.get('country') as string
+                          }
+                        };
+                        handleSaveProfile(updatedProfile);
+                      }}>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label htmlFor="street">Street Address</Label>
-                            <Input id="street" defaultValue={user.address.street} />
+                            <Label htmlFor="name">Full Name</Label>
+                            <Input id="name" name="name" defaultValue={user.firstName + ' ' + user.lastName} />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="city">City</Label>
-                            <Input id="city" defaultValue={user.address.city} />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="state">State/Province</Label>
-                            <Input id="state" defaultValue={user.address.state} />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="zip">Postal Code</Label>
-                            <Input id="zip" defaultValue={user.address.zip} />
-                          </div>
-                          <div className="space-y-2 md:col-span-2">
-                            <Label htmlFor="country">Country</Label>
-                            <Input id="country" defaultValue={user.address.country} />
+                            <Label htmlFor="email">Email</Label>
+                            <Input id="email" name="email" type="email" defaultValue={user.email} />
                           </div>
                         </div>
-                      </div>
-                      
-                      <div className="flex justify-end">
-                        <Button type="submit">Save Changes</Button>
-                      </div>
-                    </form>
+                        
+                        <Separator className="my-4" />
+                        
+                        <div>
+                          <h3 className="text-lg font-medium mb-4">Shipping Address</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="street">Street Address</Label>
+                              <Input id="street" name="street" defaultValue={user.address?.street || ''} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="city">City</Label>
+                              <Input id="city" name="city" defaultValue={user.address?.city || ''} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="state">State/Province</Label>
+                              <Input id="state" name="state" defaultValue={user.address?.state || ''} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="zip">Postal Code</Label>
+                              <Input id="zip" name="zip" defaultValue={user.address?.zipCode} />
+                            </div>
+                            <div className="space-y-2 md:col-span-2">
+                              <Label htmlFor="country">Country</Label>
+                              <Input id="country" name="country" defaultValue={user.address?.country || ''} />
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex justify-end">
+                          <Button type="submit" disabled={isLoading}>
+                            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Save Changes
+                          </Button>
+                        </div>
+                      </form>
+                    )}
                   </CardContent>
                 </Card>
               )}

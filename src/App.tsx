@@ -37,9 +37,9 @@ const queryClient = new QueryClient();
 
 const App = () => {
   // Set up admin account for development/testing
-  useEffect(() => {
-    setupAdminAccount();
-  }, []);
+  // useEffect(() => {
+  //   setupAdminAccount();
+  // }, []);
   
   return (
   <QueryClientProvider client={queryClient}>

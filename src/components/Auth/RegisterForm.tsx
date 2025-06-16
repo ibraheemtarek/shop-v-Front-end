@@ -5,6 +5,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/components/ui/use-toast';
+import apiService from '@/services/api';
+import { Eye, EyeOff } from 'lucide-react';
+
+interface RegisterResponse {
+  token: string;
+  role?: string;
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
 
 interface RegisterFormProps {
   onSuccess: () => void;
@@ -13,13 +24,16 @@ interface RegisterFormProps {
 const RegisterForm = ({ onSuccess }: RegisterFormProps) => {
   const { toast } = useToast();
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
     agreeTerms: false
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -30,11 +44,11 @@ const RegisterForm = ({ onSuccess }: RegisterFormProps) => {
     setFormData(prev => ({ ...prev, agreeTerms: checked }));
   };
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Basic validation
-    if (!formData.name || !formData.email || !formData.password) {
+    if (!formData.firstName || !formData.lastName || !formData.email || !formData.password) {
       toast({
         title: "Error",
         description: "Please fill all required fields.",
@@ -63,29 +77,68 @@ const RegisterForm = ({ onSuccess }: RegisterFormProps) => {
     
     setIsLoading(true);
     
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      // Call the register API endpoint
+      const response = await apiService.post<RegisterResponse>('/users/register', {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+        agreeTerms: formData.agreeTerms
+      });
+      
+      // Store token and user role in localStorage
+      if (response && response.token) {
+        localStorage.setItem('token', response.token);
+        if (response.role) {
+          localStorage.setItem('userRole', response.role);
+        }
+      }
+      
       toast({
         title: "Registration successful",
-        description: "Your account has been created. Please log in."
+        description: "Your account has been created. You are now logged in."
       });
+      
       setIsLoading(false);
       onSuccess();
-    }, 1500);
+    } catch (error) {
+      console.error('Registration failed:', error);
+      toast({
+        title: "Registration failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive"
+      });
+      setIsLoading(false);
+    }
   };
   
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="name">Full Name</Label>
-        <Input 
-          id="name" 
-          name="name"
-          placeholder="John Doe" 
-          value={formData.name}
-          onChange={handleChange}
-          required
-        />
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="firstName">First Name</Label>
+          <Input 
+            id="firstName" 
+            name="firstName"
+            placeholder="John" 
+            value={formData.firstName}
+            onChange={handleChange}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="lastName">Last Name</Label>
+          <Input 
+            id="lastName" 
+            name="lastName"
+            placeholder="Doe" 
+            value={formData.lastName}
+            onChange={handleChange}
+            required
+          />
+        </div>
       </div>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
@@ -101,27 +154,45 @@ const RegisterForm = ({ onSuccess }: RegisterFormProps) => {
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
-        <Input 
-          id="password" 
-          name="password"
-          type="password" 
-          placeholder="••••••••" 
-          value={formData.password}
-          onChange={handleChange}
-          required
-        />
+        <div className="relative">
+          <Input 
+            id="password" 
+            name="password"
+            type={showPassword ? "text" : "password"} 
+            placeholder="••••••••" 
+            value={formData.password}
+            onChange={handleChange}
+            required
+          />
+          <button 
+            type="button" 
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+            onClick={() => setShowPassword(!showPassword)}
+          >
+            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </div>
       </div>
       <div className="space-y-2">
         <Label htmlFor="confirmPassword">Confirm Password</Label>
-        <Input 
-          id="confirmPassword" 
-          name="confirmPassword"
-          type="password" 
-          placeholder="••••••••" 
-          value={formData.confirmPassword}
-          onChange={handleChange}
-          required
-        />
+        <div className="relative">
+          <Input 
+            id="confirmPassword" 
+            name="confirmPassword"
+            type={showConfirmPassword ? "text" : "password"} 
+            placeholder="••••••••" 
+            value={formData.confirmPassword}
+            onChange={handleChange}
+            required
+          />
+          <button 
+            type="button" 
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+          >
+            {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </div>
       </div>
       <div className="flex items-center space-x-2">
         <Checkbox 

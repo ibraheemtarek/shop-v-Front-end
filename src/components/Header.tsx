@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/context/AuthContext';
 import { 
   ShoppingCart, 
   User, 
@@ -17,31 +18,35 @@ import { Separator } from '@/components/ui/separator';
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [cartItems, setCartItems] = useState(2); // Sample cart count
-  const [isLoggedIn, setIsLoggedIn] = useState(false); // Track login state
   const navigate = useNavigate();
   const { toast } = useToast();
-
-  // Check login status on mount
+  const { user, loading } = useAuth(); // Get user and loading state from AuthContext
+  
+  // Determine login status from AuthContext
+  const isLoggedIn = !!user;
+  
+  // Debug logging to help diagnose the issue
   useEffect(() => {
-    // Check if user is logged in (this is just a placeholder)
-    // In a real app, you would check this from your auth provider or local storage
-    const userLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-    setIsLoggedIn(userLoggedIn);
-  }, []);
+    console.log('Auth state in Header:', { user, isLoggedIn, token: localStorage.getItem('token') });
+  }, [user, isLoggedIn]);
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
   };
 
+  // Access the auth context for logout functionality
+  const { logout: authLogout } = useAuth();
+  
   // Handle logout
-  const handleLogout = () => {
-    // Fixed: Properly update the localStorage value
-    localStorage.setItem('isLoggedIn', 'false');
-    setIsLoggedIn(false);
+  const handleLogout = async () => {
+    // Call the API logout function from the auth context
+    authLogout();
+    
     toast({
       title: "Logged out successfully",
       description: "You have been logged out."
     });
+    
     navigate('/');
   };
 
