@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Header from '@/components/Header';
@@ -11,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { User, Package, ShoppingCart, Heart, LogOut, Settings, CreditCard, X, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import UserService, { User as UserType } from '@/services/userService';
+import OrderService, { Order } from '@/services/orderService';
 
 // Use the User type from userService - no need to redefine it
 // Adding a placeholder avatar helper since User doesn't include avatar
@@ -52,6 +52,11 @@ const Account = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // State for orders data with loading and error handling
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  
   // Update active tab when URL changes
   useEffect(() => {
     if (tabParam) {
@@ -79,30 +84,26 @@ const Account = () => {
     fetchUserData();
   }, []);
 
-  // Mock orders
-  const orders = [
-    {
-      id: 'ORD-1234',
-      date: '2025-05-10',
-      total: 125.99,
-      status: 'Delivered',
-      items: 3
-    },
-    {
-      id: 'ORD-5678',
-      date: '2025-05-05',
-      total: 79.99,
-      status: 'Processing',
-      items: 2
-    },
-    {
-      id: 'ORD-9012',
-      date: '2025-04-28',
-      total: 49.99,
-      status: 'Shipped',
-      items: 1
-    }
-  ];
+  // Fetch orders when orders tab is active
+  useEffect(() => {
+    const fetchOrders = async () => {
+      if (activeTab === 'orders') {
+        try {
+          setOrdersLoading(true);
+          setOrdersError(null);
+          const ordersData = await OrderService.getUserOrders();
+          setOrders(ordersData);
+        } catch (err) {
+          console.error('Failed to fetch orders data:', err);
+          setOrdersError('Failed to load your orders. Please try again later.');
+        } finally {
+          setOrdersLoading(false);
+        }
+      }
+    };
+    
+    fetchOrders();
+  }, [activeTab]);
 
   // Mock wishlist
   const [wishlist, setWishlist] = useState<WishlistItem[]>([
@@ -405,28 +406,45 @@ const Account = () => {
                     <CardTitle>Order History</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {orders.length > 0 ? (
+                    {ordersLoading ? (
+                      <div className="flex flex-col items-center justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                        <p className="text-sm text-muted-foreground">Loading your orders...</p>
+                      </div>
+                    ) : ordersError ? (
+                      <div className="text-center py-8">
+                        <p className="text-destructive mb-4">{ordersError}</p>
+                        <Button 
+                          onClick={() => setActiveTab('orders')} 
+                          variant="outline"
+                        >
+                          Try Again
+                        </Button>
+                      </div>
+                    ) : orders.length > 0 ? (
                       <div className="space-y-4">
                         {orders.map((order) => (
-                          <div key={order.id} className="flex flex-col md:flex-row justify-between p-4 border rounded-lg">
+                          <div key={order._id} className="flex flex-col md:flex-row justify-between p-4 border rounded-lg">
                             <div className="space-y-1 mb-2 md:mb-0">
-                              <p className="font-medium">{order.id}</p>
-                              <p className="text-sm text-muted-foreground">{order.date}</p>
+                              <p className="font-medium">{order.orderNumber || order._id}</p>
+                              <p className="text-sm text-muted-foreground">{new Date(order.createdAt).toLocaleDateString()}</p>
                               <div className="text-sm">
                                 <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
-                                  order.status === 'Delivered' ? 'bg-green-100 text-green-800' : 
-                                  order.status === 'Shipped' ? 'bg-blue-100 text-blue-800' :
-                                  'bg-yellow-100 text-yellow-800'
+                                  order.status === 'delivered' ? 'bg-green-100 text-green-800' : 
+                                  order.status === 'shipped' ? 'bg-blue-100 text-blue-800' :
+                                  order.status === 'processing' ? 'bg-yellow-100 text-yellow-800' :
+                                  order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-800'
                                 }`}>
-                                  {order.status}
+                                  {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                                 </span>
                               </div>
                             </div>
                             <div className="flex flex-col text-right">
-                              <p className="font-medium">${order.total.toFixed(2)}</p>
-                              <p className="text-sm text-muted-foreground">{order.items} item{order.items > 1 ? 's' : ''}</p>
+                              <p className="font-medium">${order.totalPrice.toFixed(2)}</p>
+                              <p className="text-sm text-muted-foreground">{order.orderItems.length} item{order.orderItems.length > 1 ? 's' : ''}</p>
                               <Button variant="ghost" size="sm" className="mt-2" asChild>
-                                <Link to={`/order/${order.id}`}>View Details</Link>
+                                <Link to={`/order/${order._id}`}>View Details</Link>
                               </Button>
                             </div>
                           </div>
