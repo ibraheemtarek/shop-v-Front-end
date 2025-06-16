@@ -61,12 +61,22 @@ class ApiService {
     
     try {
       console.log('Fetching a fresh CSRF token');
+
+      // In production with cross-origin setup, we need special handling
+      // to ensure the CSRF cookie and token work properly
+      const crossOriginMode = API_CONFIG.isCrossOrigin();
+      console.log('Cross-origin mode:', crossOriginMode ? 'yes' : 'no');
       
       // Make a request to the server to set the CSRF cookie
       const response = await fetch(`${API_CONFIG.BASE_URL}/api/csrf-token`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          // In cross-origin mode, add the origin header to help server identify the client
+          ...(crossOriginMode && {
+            'Origin': window.location.origin,
+            'X-Frontend-Domain': API_CONFIG.PRODUCTION_DOMAIN
+          })
         },
         credentials: 'include', // Critical: include cookies for CSRF to work properly
       });
@@ -268,6 +278,15 @@ class ApiService {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
+      // Check if we're in cross-origin mode
+      const crossOriginMode = API_CONFIG.isCrossOrigin();
+      if (crossOriginMode) {
+        // Add headers to help the server identify the client in cross-origin mode
+        headers['Origin'] = window.location.origin;
+        headers['X-Frontend-Domain'] = API_CONFIG.PRODUCTION_DOMAIN;
+        console.log('Added cross-origin headers for production environment');
+      }
+      
       // Special handling for login/register to ensure we fetch a fresh CSRF token first
       if (endpoint === '/api/auth/login' || endpoint === '/api/users/register') {
         try {
@@ -275,7 +294,7 @@ class ApiService {
           console.log('Fetching fresh CSRF token before login/register');
           const csrfToken = await this.getCsrfToken();
           headers['X-CSRF-Token'] = csrfToken;
-          console.log('Added CSRF token to login/register request');
+          console.log('Added CSRF token to login/register request:', csrfToken);
         } catch (error) {
           console.error('Failed to get CSRF token for login:', error);
           // For login/register, fail if we can't get a token
@@ -292,12 +311,19 @@ class ApiService {
         }
       }
       
+      // Add the request debugging info
+      console.debug('Sending request with headers:', JSON.stringify(headers));
+      
       const response = await fetch(`${API_CONFIG.BASE_URL}${endpoint}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(data),
         credentials: 'include', 
       });
+      
+      // Log response status and headers for debugging
+      console.debug(`Response status: ${response.status}`);
+      console.debug('Response headers:', [...response.headers.entries()]);
 
       if (!response.ok) {
         // If unauthorized and we have a token, try to refresh it
@@ -318,6 +344,7 @@ class ApiService {
 
         try {
           const errorData = await response.json();
+          console.error('API error details:', errorData);
           throw new Error(errorData.message || `API error: ${response.status}`);
         } catch (e) {
           throw new Error(`API error: ${response.status}`);
