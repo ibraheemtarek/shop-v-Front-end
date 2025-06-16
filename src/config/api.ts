@@ -18,7 +18,8 @@ const API_CONFIG = {
   
   // Production configuration
   PRODUCTION_DOMAIN: 'shop-v-front-end.vercel.app',
-  CSRF_ENABLED: true,
+  // CSRF protection has been disabled for this project
+  CSRF_ENABLED: false,
   
   // Helper to check if we're in a cross-origin situation in production
   isCrossOrigin: () => {
