@@ -8,9 +8,8 @@ const getApiBaseUrl = () => {
     return '';
   }
   
-  // In production, the app and API are typically hosted on the same domain
-  // Change this if your production setup is different
-  return '';
+  // In production, point directly to the backend API
+  return 'https://shop-v-backend-production.up.railway.app';
 };
 
 const API_CONFIG = {
