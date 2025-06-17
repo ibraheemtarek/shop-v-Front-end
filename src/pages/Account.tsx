@@ -11,15 +11,11 @@ import { User, Package, ShoppingCart, Heart, LogOut, Settings, CreditCard, X, Lo
 import { useToast } from '@/components/ui/use-toast';
 import UserService, { User as UserType } from '@/services/userService';
 import OrderService, { Order } from '@/services/orderService';
+import { Product } from '@/services/productService';
 
 // Use the User type from userService - no need to redefine it
 // Adding a placeholder avatar helper since User doesn't include avatar
-interface WishlistItem {
-  id: string;
-  name: string;
-  price: number;
-  image: string;
-}
+// Using Product type from productService for wishlist items
 
 // The User type from userService doesn't have an avatar field
 
@@ -56,6 +52,11 @@ const Account = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+  
+  // State for wishlist data with loading and error handling
+  const [wishlist, setWishlist] = useState<Product[]>([]);
+  const [wishlistLoading, setWishlistLoading] = useState(false);
+  const [wishlistError, setWishlistError] = useState<string | null>(null);
   
   // Update active tab when URL changes
   useEffect(() => {
@@ -105,21 +106,26 @@ const Account = () => {
     fetchOrders();
   }, [activeTab]);
 
-  // Mock wishlist
-  const [wishlist, setWishlist] = useState<WishlistItem[]>([
-    {
-      id: '1',
-      name: 'Wireless Bluetooth Headphones',
-      price: 99.99,
-      image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80'
-    },
-    {
-      id: '2',
-      name: 'Smart Watch',
-      price: 199.99,
-      image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80'
-    }
-  ]);
+  // Fetch wishlist when wishlist tab is active
+  useEffect(() => {
+    const fetchWishlist = async () => {
+      if (activeTab === 'wishlist') {
+        try {
+          setWishlistLoading(true);
+          setWishlistError(null);
+          const wishlistData = await UserService.getWishlist();
+          setWishlist(wishlistData);
+        } catch (err) {
+          console.error('Failed to fetch wishlist data:', err);
+          setWishlistError('Failed to load your wishlist. Please try again later.');
+        } finally {
+          setWishlistLoading(false);
+        }
+      }
+    };
+    
+    fetchWishlist();
+  }, [activeTab]);
 
   const handleSaveProfile = async (formData: ProfileFormData) => {
     try {
@@ -163,15 +169,25 @@ const Account = () => {
     }
   };
 
-  const handleRemoveFromWishlist = (id: string) => {
-    setWishlist(wishlist.filter(item => item.id !== id));
-    toast({
-      title: "Removed from wishlist",
-      description: "The item has been removed from your wishlist."
-    });
+  const handleRemoveFromWishlist = async (id: string) => {
+    try {
+      await UserService.removeFromWishlist(id);
+      setWishlist(wishlist.filter(item => item._id !== id));
+      toast({
+        title: "Removed from wishlist",
+        description: "The item has been removed from your wishlist."
+      });
+    } catch (err) {
+      console.error('Failed to remove from wishlist:', err);
+      toast({
+        title: "Failed to remove",
+        description: "There was an error removing the item from your wishlist.",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleAddToCart = (item: WishlistItem) => {
+  const handleAddToCart = (item: Product) => {
     toast({
       title: "Added to cart",
       description: `${item.name} has been added to your cart.`
@@ -470,10 +486,25 @@ const Account = () => {
                     <CardTitle>Wishlist</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {wishlist.length > 0 ? (
+                    {wishlistLoading ? (
+                      <div className="flex flex-col items-center justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                        <p className="text-sm text-muted-foreground">Loading your wishlist...</p>
+                      </div>
+                    ) : wishlistError ? (
+                      <div className="text-center py-8">
+                        <p className="text-destructive mb-4">{wishlistError}</p>
+                        <Button 
+                          onClick={() => setActiveTab('wishlist')} 
+                          variant="outline"
+                        >
+                          Try Again
+                        </Button>
+                      </div>
+                    ) : wishlist.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {wishlist.map((item) => (
-                          <div key={item.id} className="flex border rounded-lg overflow-hidden">
+                          <div key={item._id} className="flex border rounded-lg overflow-hidden">
                             <div className="w-24 h-24">
                               <img 
                                 src={item.image} 
@@ -491,7 +522,7 @@ const Account = () => {
                                   <ShoppingCart className="h-4 w-4 mr-1" />
                                   Add to Cart
                                 </Button>
-                                <Button size="sm" variant="ghost" onClick={() => handleRemoveFromWishlist(item.id)}>
+                                <Button size="sm" variant="ghost" onClick={() => handleRemoveFromWishlist(item._id)}>
                                   <X className="h-4 w-4" />
                                 </Button>
                               </div>
