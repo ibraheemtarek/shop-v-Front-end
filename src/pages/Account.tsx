@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,8 @@ const getAvatarUrl = (user: UserType) => {
 
 const Account = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(tabParam || 'profile');
@@ -315,6 +318,14 @@ const Account = () => {
                       <Button
                         variant="ghost"
                         className="w-full justify-start text-destructive hover:text-destructive"
+                        onClick={() => {
+                          logout();
+                          toast({
+                            title: "Logged out successfully",
+                            description: "You have been logged out of your account"
+                          });
+                          navigate('/');
+                        }}
                       >
                         <LogOut className="mr-2 h-4 w-4" />
                         Logout
