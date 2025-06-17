@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import ProductGrid from '@/components/ProductGrid';
@@ -33,7 +33,6 @@ const ProductsLoadingSkeleton = () => {
 const Products = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const queryParams = new URLSearchParams(location.search);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   
   // State for products and loading
@@ -48,6 +47,7 @@ const Products = () => {
   const [priceRange, setPriceRange] = useState<number[]>([0, 1000]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [view, setView] = useState('grid');
   const [minPrice, setMinPrice] = useState(0);
   const [maxPrice, setMaxPrice] = useState(1000);
@@ -56,6 +56,7 @@ const Products = () => {
 
   // Get filter values from URL params
   useEffect(() => {
+    const queryParams = new URLSearchParams(location.search);
     const categoryParam = queryParams.get('category');
     const searchParam = queryParams.get('search');
     const minPriceParam = queryParams.get('minPrice');
@@ -70,6 +71,7 @@ const Products = () => {
     
     if (searchParam) {
       setSearchQuery(searchParam);
+      setDebouncedSearchQuery(searchParam);
     }
     
     if (minPriceParam && !isNaN(Number(minPriceParam))) {
@@ -87,13 +89,23 @@ const Products = () => {
     if (ratingParam && !isNaN(Number(ratingParam))) {
       setSelectedRating(Number(ratingParam));
     }
-  }, [queryParams]);
+  }, [location.search]);
+  
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 500); // 500ms delay
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Fetch products based on filters
   useEffect(() => {
     const fetchProducts = async () => {
       try {
         setLoading(true);
+        setError(null); // Reset error state before new fetch
         
         const params: Record<string, any> = {
           page: currentPage,
@@ -104,15 +116,15 @@ const Products = () => {
           params.category = selectedCategories[0];
         }
         
-        if (searchQuery) {
-          params.search = searchQuery;
+        if (debouncedSearchQuery) {
+          params.search = debouncedSearchQuery;
         }
         
-        if (priceRange[0] > 0) {
+        if (priceRange[0] > minPrice) {
           params.minPrice = priceRange[0];
         }
         
-        if (priceRange[1] < 1000) {
+        if (priceRange[1] < maxPrice) {
           params.maxPrice = priceRange[1];
         }
         
@@ -131,10 +143,10 @@ const Products = () => {
           image: p.image,
           category: typeof p.category === 'string' ? p.category : 
             (p.category && typeof p.category === 'object' && 'name' in p.category) ? 
-            p.category.name : 'Uncategorized',
+            p.category : 'Uncategorized',
           rating: p.rating,
           reviewCount: p.reviewCount,
-          isNew: p.isNew,
+          isNew: p.isNewProduct, // Fixed: using isNewProduct instead of isNew
           isOnSale: p.isOnSale
         }));
         
@@ -142,30 +154,37 @@ const Products = () => {
         setTotalProducts(response.total);
         setTotalPages(response.pages);
         setError(null);
-      } catch (err) {
-        setError('Failed to load products. Please try again.');
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load products. Please try again.';
+        setError(errorMessage);
         setProducts([]);
+        console.error('Error fetching products:', err);
       } finally {
         setLoading(false);
       }
     };
     
     fetchProducts();
-  }, [currentPage, selectedCategories, searchQuery, priceRange, selectedRating]);
+  }, [currentPage, selectedCategories, debouncedSearchQuery, priceRange, selectedRating, minPrice, maxPrice]);
 
-  // Fetch categories for filter
+  // Fetch categories for filter - using a separate API call would be more efficient
   useEffect(() => {
-    const fetchCategories = async () => {
+    const fetchCategoriesAndPriceRange = async () => {
       try {
-        const response = await productService.getProducts();
+        // Ideally, this would be a dedicated API endpoint for categories
+        // For now, we'll use the products endpoint but with minimal data
+        const response = await productService.getProducts({
+          limit: 100, // Get more products to have better price range estimation
+        });
         const allProducts = response.products;
         
         // Extract unique categories
         const uniqueCategories = [...new Set(allProducts.map(product => {
+          // Handle different category formats
           if (typeof product.category === 'string') {
             return product.category;
           } else if (product.category && typeof product.category === 'object' && 'name' in product.category) {
-            return product.category.name;
+            return product.category;
           }
           return 'Uncategorized';
         }))];
@@ -188,10 +207,13 @@ const Products = () => {
         }
       } catch (error) {
         console.error('Failed to fetch categories:', error);
+        setError('Failed to load product categories. Please try refreshing the page.');
       }
     };
     
-    fetchCategories();
+    fetchCategoriesAndPriceRange();
+    // We only want to run this once on component mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update URL with filters
@@ -202,8 +224,8 @@ const Products = () => {
       params.set('category', selectedCategories[0]);
     }
     
-    if (searchQuery) {
-      params.set('search', searchQuery);
+    if (debouncedSearchQuery) {
+      params.set('search', debouncedSearchQuery);
     }
     
     if (priceRange[0] > minPrice) {
@@ -224,7 +246,7 @@ const Products = () => {
     
     // Update URL without reloading page
     navigate({ search: params.toString() }, { replace: true });
-  }, [navigate, selectedCategories, searchQuery, priceRange, currentPage, selectedRating, minPrice, maxPrice]);
+  }, [navigate, selectedCategories, debouncedSearchQuery, priceRange, currentPage, selectedRating, minPrice, maxPrice]);
 
   // Handle category filter change
   const toggleCategory = (category: string) => {
@@ -243,13 +265,14 @@ const Products = () => {
   };
   
   // Handle reset filters
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setPriceRange([minPrice, maxPrice]);
     setSelectedCategories([]);
     setSearchQuery('');
+    setDebouncedSearchQuery('');
     setSelectedRating(null);
     setCurrentPage(1);
-  };
+  }, [minPrice, maxPrice]);
   
   // Handle page change
   const changePage = (page: number) => {
@@ -303,7 +326,10 @@ const Products = () => {
                 type="search"
                 placeholder="Search products..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1); // Reset to first page when searching
+                }}
                 className="max-w-[300px] w-full"
               />
             </div>
