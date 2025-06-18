@@ -9,8 +9,9 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useToast } from '@/components/ui/use-toast';
 import { ShoppingCart, Heart, Star, ArrowLeft, Share2, Check } from 'lucide-react';
+import productService, { Product as ApiProduct } from '@/services/productService';
 
-// Mock product data, in a real application this would come from an API
+// Interface for the product data in this component
 interface Product {
   id: string;
   name: string;
@@ -31,54 +32,62 @@ const ProductDetail = () => {
   const { id } = useParams<{ id: string }>();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
   const [quantity, setQuantity] = useState(1);
   const { toast } = useToast();
   
-  // In a real app, you'd fetch the product data from an API
+  // Fetch product data from the API
   useEffect(() => {
-    // This simulates an API call
-    setLoading(true);
-    setTimeout(() => {
-      const mockProduct: Product = {
-        id: id || '1',
-        name: "Premium Wireless Headphones",
-        price: 299.99,
-        discountPrice: 249.99,
-        rating: 4.8,
-        reviewCount: 245,
-        description: "Experience immersive sound with our premium wireless headphones. Featuring noise cancellation technology, long battery life, and comfortable design for all-day listening.",
-        features: [
-          "Active Noise Cancellation",
-          "40-hour Battery Life",
-          "Bluetooth 5.2 Connectivity",
-          "Memory Foam Ear Cushions",
-          "Voice Assistant Support",
-          "Water and Sweat Resistant"
-        ],
-        images: [
-          "/placeholder.svg",
-          "/placeholder.svg",
-          "/placeholder.svg",
-          "/placeholder.svg"
-        ],
-        colors: ["Black", "Silver", "Blue"],
-        sizes: ["One Size"],
-        inStock: true,
-        category: "Electronics"
-      };
+    const fetchProduct = async () => {
+      if (!id) return;
       
-      setProduct(mockProduct);
-      if (mockProduct.colors.length > 0) {
-        setSelectedColor(mockProduct.colors[0]);
+      setLoading(true);
+      setError(null);
+      
+      try {
+        const apiProduct = await productService.getProductById(id);
+        
+        // Map API product to our component's Product interface
+        const mappedProduct: Product = {
+          id: apiProduct._id,
+          name: apiProduct.name,
+          price: apiProduct.price,
+          discountPrice: apiProduct.originalPrice && apiProduct.originalPrice > apiProduct.price ? apiProduct.originalPrice : undefined,
+          rating: apiProduct.rating || 0,
+          reviewCount: apiProduct.reviewCount || 0,
+          description: apiProduct.description,
+          features: apiProduct.features || [],
+          // Use the main image and any additional images
+          images: apiProduct.images?.length ? apiProduct.images : [apiProduct.image || '/placeholder.svg'],
+          colors: apiProduct.colors || [],
+          sizes: apiProduct.sizes || [],
+          inStock: apiProduct.inStock,
+          category: typeof apiProduct.category === 'string' ? apiProduct.category : 
+            (apiProduct.category && typeof apiProduct.category === 'object' && 'name' in apiProduct.category) ? 
+            (apiProduct.category as { name: string }).name : 'Uncategorized'
+        };
+        
+        setProduct(mappedProduct);
+        
+        // Set initial selected color and size if available
+        if (mappedProduct.colors.length > 0) {
+          setSelectedColor(mappedProduct.colors[0]);
+        }
+        if (mappedProduct.sizes.length > 0) {
+          setSelectedSize(mappedProduct.sizes[0]);
+        }
+      } catch (err) {
+        console.error('Error fetching product:', err);
+        setError('Failed to load product details. Please try again.');
+      } finally {
+        setLoading(false);
       }
-      if (mockProduct.sizes.length > 0) {
-        setSelectedSize(mockProduct.sizes[0]);
-      }
-      setLoading(false);
-    }, 1000);
+    };
+    
+    fetchProduct();
   }, [id]);
 
   const handleAddToCart = () => {
@@ -117,7 +126,23 @@ const ProductDetail = () => {
     );
   }
   
-  if (!product) {
+  if (error) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <Header />
+        <main className="container py-16 text-center">
+          <h1 className="text-3xl font-bold mb-4">Error</h1>
+          <p className="mb-8">{error}</p>
+          <Button asChild>
+            <Link to="/products">View All Products</Link>
+          </Button>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+  
+  if (!loading && !product) {
     return (
       <div className="flex min-h-screen flex-col">
         <Header />
