@@ -15,18 +15,25 @@ import categoryService, { Category as ApiCategory } from '@/services/categorySer
 import productService, { Product } from '@/services/productService';
 
 // Convert API product type to ProductProps type for the ProductGrid component
-const mapApiProductToProductProps = (product: Product): ProductProps => ({
-  id: product._id,
-  name: product.name,
-  price: product.price,
-  originalPrice: product.originalPrice,
-  image: product.image,
-  category: product.category, // This will be the category ID
-  rating: product.rating,
-  reviewCount: product.reviewCount,
-  isNew: product.isNewProduct,
-  isOnSale: product.isOnSale
-});
+const mapApiProductToProductProps = (product: Product): ProductProps => {
+  // Handle case where category might be an object instead of a string ID
+  const categoryValue = typeof product.category === 'string' 
+    ? product.category 
+    : (product.category as {_id?: string})?._id || 'unknown';
+    
+  return {
+    id: product._id,
+    name: product.name,
+    price: product.price,
+    originalPrice: product.originalPrice,
+    image: product.image,
+    category: categoryValue, // Ensure this is always a string
+    rating: product.rating,
+    reviewCount: product.reviewCount,
+    isNew: product.isNewProduct,
+    isOnSale: product.isOnSale
+  };
+};
 
 const Category = () => {
   const { slug } = useParams<{ slug: string }>();
