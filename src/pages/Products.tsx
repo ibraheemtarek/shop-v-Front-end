@@ -143,7 +143,7 @@ const Products = () => {
           image: p.image,
           category: typeof p.category === 'string' ? p.category : 
             (p.category && typeof p.category === 'object' && 'name' in p.category) ? 
-            p.category : 'Uncategorized',
+            (p.category as { name: string }).name : 'Uncategorized',
           rating: p.rating,
           reviewCount: p.reviewCount,
           isNew: p.isNewProduct, // Fixed: using isNewProduct instead of isNew

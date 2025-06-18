@@ -112,5 +112,3 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </CartContext.Provider>
   );
 };
-
-// useCart hook has been moved to cartUtils.ts
