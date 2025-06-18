@@ -150,6 +150,7 @@ const Products = () => {
           isOnSale: p.isOnSale
         }));
         
+        
         setProducts(mappedProducts);
         setTotalProducts(response.total);
         setTotalPages(response.pages);
