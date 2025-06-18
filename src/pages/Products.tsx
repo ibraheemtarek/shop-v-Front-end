@@ -51,6 +51,8 @@ const Products = () => {
   const [view, setView] = useState('grid');
   const [minPrice, setMinPrice] = useState(0);
   const [maxPrice, setMaxPrice] = useState(1000);
+  // Define a type for category objects
+  type CategoryType = string | { _id: string; name: string; slug?: string };
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
 
@@ -185,12 +187,19 @@ const Products = () => {
           if (typeof product.category === 'string') {
             return product.category;
           } else if (product.category && typeof product.category === 'object' && 'name' in product.category) {
-            return product.category;
+            return (product.category as { name: string }).name;
           }
           return 'Uncategorized';
         }))];
         
-        setCategories(uniqueCategories);
+        // Ensure all categories are strings
+        const stringCategories = uniqueCategories.map(cat => 
+          typeof cat === 'string' ? cat : 
+          (cat && typeof cat === 'object' && 'name' in cat) ? 
+          (cat as { name: string }).name : 'Uncategorized'
+        );
+        
+        setCategories(stringCategories);
         
         // Find min and max prices
         if (allProducts.length > 0) {
