@@ -4,6 +4,8 @@ import API_CONFIG from '../config/api';
 let isRefreshing = false;
 // Queue of callbacks to run after token refresh
 let refreshSubscribers: Array<(token: string) => void> = [];
+// Token refresh timer
+let tokenRefreshTimer: number | null = null;
 
 /**
  * Add a callback to the refresh queue
@@ -76,55 +78,152 @@ class ApiService {
    * @returns Promise with response data
    */
   /**
-   * Handle unauthorized errors (401) by refreshing the token
-   * @param originalRequest The original failed request
+   * Parse JWT token to get expiration time
+   * @param token JWT token
+   * @returns Expiration timestamp in milliseconds or null if invalid
    */
-  async handleTokenRefresh(originalRequest: ApiRequest): Promise<ApiRequest> {
+  parseTokenExpiration(token: string): number | null {
     try {
-      if (!isRefreshing) {
-        isRefreshing = true;
-        console.log('Access token expired, attempting refresh...');
-        
-        // Call the refresh token endpoint which will use the httpOnly refresh token cookie
-        const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-        });
-        
-        if (!response.ok) {
-          throw new Error('Token refresh failed');
-        }
-        
-        const data = await response.json();
-        const newToken = data.token;
-        
-        // Store the new token
-        localStorage.setItem('token', newToken);
-        
-        // Notify all subscribers that the token has been refreshed
-        onTokenRefreshed(newToken);
-        
-        // Return updated original request
-        return retryOriginalRequest(originalRequest, newToken);
-      } else {
-        // We're already refreshing, add this request to the queue
-        return new Promise((resolve) => {
-          subscribeTokenRefresh((token) => {
-            resolve(retryOriginalRequest(originalRequest, token));
-          });
-        });
+      // Get the payload part of the JWT (second part)
+      const base64Url = token.split('.')[1];
+      if (!base64Url) return null;
+      
+      // Convert base64url to regular base64
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      
+      // Decode the base64 string and parse as JSON
+      const jsonPayload = JSON.parse(atob(base64));
+      
+      // Get expiration time (exp) and convert to milliseconds
+      if (jsonPayload.exp) {
+        return jsonPayload.exp * 1000; // Convert seconds to milliseconds
       }
+      return null;
+    } catch (e) {
+      console.error('Error parsing token:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Check if token is about to expire and refresh it proactively
+   * @param token Current access token
+   * @returns Promise that resolves when token check is complete
+   */
+  async checkTokenExpiration(token: string): Promise<void> {
+    const expTime = this.parseTokenExpiration(token);
+    if (!expTime) return;
+    
+    const currentTime = Date.now();
+    const timeToExpire = expTime - currentTime;
+    
+    // If token expires in less than 5 minutes (300000ms), refresh it proactively
+    if (timeToExpire < 300000 && timeToExpire > 0) {
+      console.log('Token expiring soon, refreshing proactively...');
+      try {
+        await this.refreshAccessToken();
+      } catch (error) {
+        console.error('Proactive token refresh failed:', error);
+      }
+    } else if (timeToExpire <= 0) {
+      // Token has already expired
+      console.log('Token already expired, forcing refresh...');
+      try {
+        await this.refreshAccessToken();
+      } catch (error) {
+        console.error('Token refresh failed for expired token:', error);
+        // Clear auth data since refresh failed
+        localStorage.removeItem('token');
+        localStorage.removeItem('userRole');
+        // Redirect to login
+        window.location.href = '/login';
+      }
+    }
+  }
+
+  /**
+   * Setup automatic token refresh checks
+   */
+  setupTokenRefreshCheck(): void {
+    // Clear any existing timer
+    if (tokenRefreshTimer !== null) {
+      window.clearInterval(tokenRefreshTimer);
+    }
+    
+    // Check token expiration every minute
+    tokenRefreshTimer = window.setInterval(() => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        this.checkTokenExpiration(token).catch(console.error);
+      }
+    }, 60000); // Check every minute
+  }
+
+  /**
+   * Refresh the access token
+   * @returns Promise with the new token
+   */
+  async refreshAccessToken(): Promise<string> {
+    if (isRefreshing) {
+      // If already refreshing, wait for it to complete
+      return new Promise((resolve) => {
+        subscribeTokenRefresh((token) => {
+          resolve(token);
+        });
+      });
+    }
+    
+    try {
+      isRefreshing = true;
+      console.log('Refreshing access token...');
+      
+      // Call the refresh token endpoint which will use the httpOnly refresh token cookie
+      const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Token refresh failed: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const newToken = data.token;
+      
+      // Store the new token
+      localStorage.setItem('token', newToken);
+      
+      // Notify all subscribers that the token has been refreshed
+      onTokenRefreshed(newToken);
+      
+      return newToken;
     } catch (error) {
       console.error('Token refresh failed:', error);
       // Clear auth data since refresh failed
       localStorage.removeItem('token');
       localStorage.removeItem('userRole');
-      // Redirect to login
-      window.location.href = '/login';
+      // Only redirect to login if we're not already on the login page
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
+      }
       throw error;
     } finally {
       isRefreshing = false;
+    }
+  }
+
+  /**
+   * Handle unauthorized errors (401) by refreshing the token
+   * @param originalRequest The original failed request
+   */
+  async handleTokenRefresh(originalRequest: ApiRequest): Promise<ApiRequest> {
+    try {
+      const newToken = await this.refreshAccessToken();
+      return retryOriginalRequest(originalRequest, newToken);
+    } catch (error) {
+      console.error('Token refresh failed during request retry:', error);
+      throw error;
     }
   }
   
@@ -439,4 +538,12 @@ class ApiService {
   }
 }
 
-export default new ApiService();
+// Create API service instance
+const apiService = new ApiService();
+
+// Setup token refresh check on initialization
+if (typeof window !== 'undefined') {
+  apiService.setupTokenRefreshCheck();
+}
+
+export default apiService;

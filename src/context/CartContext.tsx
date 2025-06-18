@@ -1,39 +1,17 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import cartService from '../services/cartService';
-import type { Cart, CartItem } from '../services/cartService';
-import { useAuth } from './AuthContext';
-
-interface CartContextType {
-  cart: Cart | null;
-  loading: boolean;
-  error: string | null;
-  addToCart: (productId: string, quantity?: number) => Promise<void>;
-  updateCartItem: (productId: string, quantity: number) => Promise<void>;
-  removeFromCart: (productId: string) => Promise<void>;
-  clearCart: () => Promise<void>;
-  refreshCart: () => Promise<void>;
-}
-
-const CartContext = createContext<CartContextType | undefined>(undefined);
+import type { Cart } from '../services/cartService';
+import { useAuth } from './authUtils';
+import { CartContext, CartContextType } from './cartUtils';
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
-
-  // Fetch cart when user is authenticated
-  useEffect(() => {
-    if (user) {
-      refreshCart();
-    } else {
-      // Clear cart when user logs out
-      setCart(null);
-    }
-  }, [user]);
-
+  
   // Refresh cart data
-  const refreshCart = async () => {
+  const refreshCart = useCallback(async () => {
     if (!user) return;
     
     try {
@@ -46,7 +24,19 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
+
+  // Fetch cart when user is authenticated
+  useEffect(() => {
+    if (user) {
+      refreshCart();
+    } else {
+      // Clear cart when user logs out
+      setCart(null);
+    }
+  }, [user, refreshCart]);
+
+
 
   // Add item to cart
   const addToCart = async (productId: string, quantity: number = 1) => {
@@ -104,26 +94,23 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Explicitly create the context value with the CartContextType
+  const contextValue: CartContextType = { 
+    cart, 
+    loading, 
+    error, 
+    addToCart, 
+    updateCartItem, 
+    removeFromCart, 
+    clearCart,
+    refreshCart
+  };
+
   return (
-    <CartContext.Provider value={{ 
-      cart, 
-      loading, 
-      error, 
-      addToCart, 
-      updateCartItem, 
-      removeFromCart, 
-      clearCart,
-      refreshCart
-    }}>
+    <CartContext.Provider value={contextValue}>
       {children}
     </CartContext.Provider>
   );
 };
 
-export const useCart = (): CartContextType => {
-  const context = useContext(CartContext);
-  if (context === undefined) {
-    throw new Error('useCart must be used within a CartProvider');
-  }
-  return context;
-};
+// useCart hook has been moved to cartUtils.ts
