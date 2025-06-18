@@ -177,19 +177,44 @@ class ApiService {
       isRefreshing = true;
       console.log('Refreshing access token...');
       
+      // Check if we're in cross-origin mode
+      const crossOriginMode = API_CONFIG.isCrossOrigin();
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      
+      if (crossOriginMode) {
+        // Add headers to help the server identify the client in cross-origin mode
+        headers['Origin'] = window.location.origin;
+        headers['X-Frontend-Domain'] = API_CONFIG.PRODUCTION_DOMAIN;
+        console.log('Added cross-origin headers for token refresh');
+      }
+      
       // Call the refresh token endpoint which will use the httpOnly refresh token cookie
+      console.log(`Calling refresh endpoint: ${API_CONFIG.BASE_URL}/api/auth/refresh`);
       const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/refresh`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include',
       });
       
+      // Log response details for debugging
+      console.debug(`Refresh token response status: ${response.status}`);
+      console.debug('Refresh token response headers:', [...response.headers.entries()]);
+      
       if (!response.ok) {
-        throw new Error(`Token refresh failed: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`Token refresh failed with status ${response.status}:`, errorText);
+        throw new Error(`Token refresh failed: ${response.status} - ${errorText}`);
       }
       
       const data = await response.json();
       const newToken = data.token;
+      
+      if (!newToken) {
+        console.error('Token refresh succeeded but no token was returned');
+        throw new Error('No token returned from refresh endpoint');
+      }
+      
+      console.log('Token refresh successful, new token received');
       
       // Store the new token
       localStorage.setItem('token', newToken);

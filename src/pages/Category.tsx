@@ -62,6 +62,9 @@ const Category = () => {
         if (slug) {
           const category = categoriesData.find(cat => cat.slug === slug);
           setCurrentCategory(category || null);
+        } else {
+          // Reset current category when on the main category page
+          setCurrentCategory(null);
         }
         
         // Fetch products with optional category filter
@@ -71,6 +74,12 @@ const Category = () => {
           const category = categoriesData.find(cat => cat.slug === slug);
           if (category) {
             params.category = category._id;
+          } else {
+            // If slug doesn't match any category, show no products
+            setProducts([]);
+            setBrands([]);
+            setLoading(false);
+            return;
           }
         }
         

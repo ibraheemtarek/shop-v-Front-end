@@ -32,49 +32,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const token = localStorage.getItem('token');
       if (!token) {
+        console.log('No token found in localStorage, user is not authenticated');
         setUser(null);
         return;
       }
       
-      const userData = await userService.getUserProfile();
-      const authResponse: AuthResponse = {
-        _id: userData._id,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        email: userData.email,
-        role: userData.role,
-        token,
-      };
-      setUser(authResponse);
-      persistUserData(authResponse);
-      return authResponse;
-    } catch (err: any) {
+      console.log('Attempting to refresh user data with existing token');
+      try {
+        const userData = await userService.getUserProfile();
+        console.log('User profile retrieved successfully');
+        
+        const authResponse: AuthResponse = {
+          _id: userData._id,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          email: userData.email,
+          role: userData.role,
+          token,
+        };
+        setUser(authResponse);
+        persistUserData(authResponse);
+        return authResponse;
+      } catch (profileErr: unknown) {
+        console.error('Failed to get user profile with current token:', profileErr);
+        throw profileErr; // Throw to trigger token refresh attempt
+      }
+    } catch (err: unknown) {
       console.error('Failed to refresh user data:', err);
       // If refresh fails, try to refresh the token first before giving up
       try {
-        await api.refreshAccessToken();
+        console.log('Attempting to refresh the access token...');
+        const newToken = await api.refreshAccessToken();
+        console.log('Token refresh successful, attempting to get user profile again');
+        
         // If token refresh succeeds, try getting user data again
-        const token = localStorage.getItem('token');
-        if (token) {
+        try {
           const userData = await userService.getUserProfile();
+          console.log('User profile retrieved successfully after token refresh');
+          
           const authResponse: AuthResponse = {
             _id: userData._id,
             firstName: userData.firstName,
             lastName: userData.lastName,
             email: userData.email,
             role: userData.role,
-            token,
+            token: newToken,
           };
           setUser(authResponse);
           persistUserData(authResponse);
           return authResponse;
+        } catch (profileErr: unknown) {
+          console.error('Failed to get user profile even after token refresh:', profileErr);
+          throw profileErr; // Re-throw to trigger logout
         }
-      } catch (refreshErr) {
+      } catch (refreshErr: unknown) {
         console.error('Token refresh failed during user data refresh:', refreshErr);
         // If token refresh also fails, clear everything
         localStorage.removeItem('token');
         persistUserData(null);
         setUser(null);
+        setError('Your session has expired. Please log in again.');
       }
     }
   }, []);
@@ -145,8 +162,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(userData);
       persistUserData(userData);
       console.log('Login successful, user data:', userData);
-    } catch (err: any) {
-      setError(err.message || 'Failed to login');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to login');
     } finally {
       setLoading(false);
     }
@@ -160,8 +177,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userData = await userService.register({ firstName, lastName, email, password });
       setUser(userData);
       persistUserData(userData);
-    } catch (err: any) {
-      setError(err.message || 'Failed to register');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to register');
     } finally {
       setLoading(false);
     }
