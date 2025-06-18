@@ -10,71 +10,23 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ProductProps } from '@/components/ProductCard';
-import { SlidersHorizontal, Grid2X2, List, X } from 'lucide-react';
+import { SlidersHorizontal, Grid2X2, List, X, Loader2 } from 'lucide-react';
+import categoryService, { Category as ApiCategory } from '@/services/categoryService';
+import productService, { Product } from '@/services/productService';
 
-// Sample products (would normally come from an API)
-const allProducts: ProductProps[] = [
-  {
-    id: '1',
-    name: 'Wireless Bluetooth Headphones',
-    price: 99.99,
-    image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-    category: 'Electronics',
-    rating: 4.5,
-    reviewCount: 128,
-    isNew: true,
-  },
-  {
-    id: '2',
-    name: 'Premium Cotton T-Shirt',
-    price: 24.99,
-    originalPrice: 34.99,
-    image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-    category: 'Fashion',
-    rating: 4.2,
-    reviewCount: 95,
-    isOnSale: true,
-  },
-  {
-    id: '3',
-    name: 'Modern Coffee Table',
-    price: 199.99,
-    image: 'https://images.unsplash.com/photo-1532372320572-cda25653a26d?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-    category: 'Furniture',
-    rating: 4.8,
-    reviewCount: 42,
-  },
-  {
-    id: '4',
-    name: 'Stainless Steel Water Bottle',
-    price: 19.99,
-    originalPrice: 29.99,
-    image: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-    category: 'Kitchen',
-    rating: 4.0,
-    reviewCount: 156,
-    isOnSale: true,
-  },
-  {
-    id: '5',
-    name: 'Professional Digital Camera',
-    price: 799.99,
-    image: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-    category: 'Electronics',
-    rating: 4.9,
-    reviewCount: 64,
-    isNew: true,
-  },
-  {
-    id: '6',
-    name: 'Leather Wallet',
-    price: 49.99,
-    image: 'https://images.unsplash.com/photo-1627123424574-724758594e93?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-    category: 'Accessories',
-    rating: 4.3,
-    reviewCount: 87,
-  }
-];
+// Convert API product type to ProductProps type for the ProductGrid component
+const mapApiProductToProductProps = (product: Product): ProductProps => ({
+  id: product._id,
+  name: product.name,
+  price: product.price,
+  originalPrice: product.originalPrice,
+  image: product.image,
+  category: product.category, // This will be the category ID
+  rating: product.rating,
+  reviewCount: product.reviewCount,
+  isNew: product.isNewProduct,
+  isOnSale: product.isOnSale
+});
 
 const Category = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -83,17 +35,66 @@ const Category = () => {
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [view, setView] = useState('grid');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // State for API data
+  const [categories, setCategories] = useState<ApiCategory[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
+  const [currentCategory, setCurrentCategory] = useState<ApiCategory | null>(null);
   
   // Format category title
-  const categoryTitle = slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : 'All Categories';
+  const categoryTitle = currentCategory ? currentCategory.name : (slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : 'All Categories');
+  
+  // Fetch categories and products
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        // Fetch all categories
+        const categoriesData = await categoryService.getCategories();
+        setCategories(categoriesData);
+        
+        // Find current category if slug is provided
+        if (slug) {
+          const category = categoriesData.find(cat => cat.slug === slug);
+          setCurrentCategory(category || null);
+        }
+        
+        // Fetch products with optional category filter
+        const params: { category?: string } = {};
+        if (slug) {
+          // Find the category ID by slug
+          const category = categoriesData.find(cat => cat.slug === slug);
+          if (category) {
+            params.category = category._id;
+          }
+        }
+        
+        const productsResponse = await productService.getProducts(params);
+        setProducts(productsResponse.products);
+        
+        // Extract unique brands from products
+        const uniqueBrands = Array.from(
+          new Set(productsResponse.products.map(product => product.name.split(' ')[0]))
+        );
+        setBrands(uniqueBrands);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError('Failed to load data. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [slug]);
   
   // Filter products by category and other filters
-  const filteredProducts = allProducts.filter((product) => {
-    // Category filter
-    if (slug && product.category.toLowerCase() !== slug.toLowerCase()) {
-      return false;
-    }
-
+  const filteredProducts = products.filter((product) => {
     // Price filter
     if (product.price < priceRange[0] || product.price > priceRange[1]) {
       return false;
@@ -103,12 +104,20 @@ const Category = () => {
     if (searchQuery && !product.name.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false;
     }
+    
+    // Brand filter (if any selected)
+    if (selectedBrands.length > 0) {
+      const productBrand = product.name.split(' ')[0]; // Simple extraction of brand from name
+      if (!selectedBrands.includes(productBrand)) {
+        return false;
+      }
+    }
 
     return true;
   });
-
-  // Sample brands (would come from API)
-  const brands = ['Apple', 'Samsung', 'Sony', 'Nike', 'Adidas'];
+  
+  // Map API products to ProductProps for the ProductGrid component
+  const productPropsArray = filteredProducts.map(mapApiProductToProductProps);
 
   // Handle brand filter change
   const toggleBrand = (brand: string) => {
@@ -129,6 +138,19 @@ const Category = () => {
       <main className="flex-1 bg-brand-bg">
         <div className="container py-8">
           <h1 className="mb-6 text-3xl font-bold">{categoryTitle}</h1>
+          
+          {loading && (
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-brand-blue" />
+              <span className="ml-2">Loading...</span>
+            </div>
+          )}
+          
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
+              {error}
+            </div>
+          )}
 
           <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex items-center gap-2">
@@ -161,7 +183,7 @@ const Category = () => {
               </div>
               <p className="text-sm text-muted-foreground">
                 Showing <span className="font-medium">{filteredProducts.length}</span> of{" "}
-                <span className="font-medium">{allProducts.length}</span> products
+                <span className="font-medium">{products.length}</span> products
               </p>
             </div>
             <div className="w-full sm:w-auto">
@@ -327,9 +349,9 @@ const Category = () => {
 
             {/* Products Grid */}
             <div className="flex-1">
-              {filteredProducts.length > 0 ? (
-                <ProductGrid products={filteredProducts} />
-              ) : (
+              {!loading && filteredProducts.length > 0 ? (
+                <ProductGrid products={productPropsArray} />
+              ) : (!loading && 
                 <div className="flex h-64 items-center justify-center rounded-lg border bg-white p-6 text-center">
                   <div>
                     <p className="mb-2 text-xl font-semibold">No products found</p>

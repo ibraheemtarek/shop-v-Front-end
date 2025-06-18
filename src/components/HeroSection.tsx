@@ -20,7 +20,7 @@ const HeroSection = () => {
               <Link to="/products">Shop Now</Link>
             </Button>
             <Button asChild variant="outline" size="lg">
-              <Link to="/categories">Browse Categories</Link>
+              <Link to="/category">Browse Categories</Link>
             </Button>
           </div>
         </div>
