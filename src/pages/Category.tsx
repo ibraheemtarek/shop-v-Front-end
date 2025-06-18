@@ -59,9 +59,22 @@ const Category = () => {
         setCategories(categoriesData);
         
         // Find current category if slug is provided
+        let categoryId: string | undefined = undefined;
+        
         if (slug) {
           const category = categoriesData.find(cat => cat.slug === slug);
-          setCurrentCategory(category || null);
+          // Make sure we're setting null if category is not found
+          if (category) {
+            setCurrentCategory(category);
+            categoryId = category._id; // Store category ID for filtering products
+          } else {
+            setCurrentCategory(null);
+            // If slug doesn't match any category, show no products
+            setProducts([]);
+            setBrands([]);
+            setLoading(false);
+            return;
+          }
         } else {
           // Reset current category when on the main category page
           setCurrentCategory(null);
@@ -69,18 +82,8 @@ const Category = () => {
         
         // Fetch products with optional category filter
         const params: { category?: string } = {};
-        if (slug) {
-          // Find the category ID by slug
-          const category = categoriesData.find(cat => cat.slug === slug);
-          if (category) {
-            params.category = category._id;
-          } else {
-            // If slug doesn't match any category, show no products
-            setProducts([]);
-            setBrands([]);
-            setLoading(false);
-            return;
-          }
+        if (categoryId) {
+          params.category = categoryId;
         }
         
         const productsResponse = await productService.getProducts(params);
