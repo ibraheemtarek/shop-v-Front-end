@@ -13,7 +13,7 @@ export const useSearch = ({ initialQuery = '' }: UseSearchProps = {}) => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const searchQuery = params.get('q');
+    const searchQuery = params.get('search');
     if (searchQuery) {
       setQuery(searchQuery);
     }
@@ -31,7 +31,7 @@ export const useSearch = ({ initialQuery = '' }: UseSearchProps = {}) => {
     setIsSearching(true);
     
     // Navigate to search results page with query parameter
-    navigate(`/products?q=${encodeURIComponent(query.trim())}`);
+    navigate(`/products?search=${encodeURIComponent(query.trim())}`);
     
     setIsSearching(false);
   };
