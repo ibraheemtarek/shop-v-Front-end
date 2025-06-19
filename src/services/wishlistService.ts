@@ -34,29 +34,87 @@ export interface Wishlist {
 }
 
 // For type safety when handling API responses
-export type WishlistApiResponse = 
-  | { _id: string; user: string; products: string[]; createdAt: string; updatedAt: string } 
-  | { _id: string; user: string; items: Array<Partial<WishlistItem>>; createdAt: string; updatedAt: string }
-  | { wishlist?: string[] | Array<Partial<WishlistItem>> }
-  | Record<string, unknown>;
+export type WishlistApiResponse = {
+  // First format: direct product IDs
+  _id?: string;
+  user?: string;
+  products?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  
+  // Second format: full items
+  items?: Array<Partial<WishlistItem>>;
+  
+  // Third format: nested wishlist object
+  wishlist?: {
+    _id?: string;
+    user?: string;
+    products?: string[];
+    items?: Array<Partial<WishlistItem>>;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  
+  [key: string]: unknown;
+};
 
 /**
  * Wishlist API service
  */
 class WishlistService {
   /**
+   * Refresh the wishlist data
+   */
+  async refreshWishlist(): Promise<Wishlist> {
+    try {
+      console.log('Refreshing wishlist data...');
+      const wishlist = await this.getUserWishlist();
+      console.log('Wishlist refreshed successfully:', wishlist.items.length, 'items');
+      return wishlist;
+    } catch (error) {
+      console.error('Error refreshing wishlist:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get user wishlist
    */
   async getUserWishlist(): Promise<Wishlist> {
     try {
+      console.log('Fetching user wishlist...');
       // Get wishlist from backend (might just be product IDs)
       const response = await api.get<WishlistApiResponse>('/api/users/wishlist');
+      console.log('Wishlist API response:', response);
+      
+      // Create a default empty wishlist
+      const emptyWishlist: Wishlist = {
+        _id: '',
+        user: '',
+        items: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Handle case where response is empty or undefined
+      if (!response) {
+        console.log('Empty response from wishlist API');
+        return emptyWishlist;
+      }
+      
+      // Check if we have a wishlist property that contains the actual data
+      const wishlistData = response.wishlist || response;
+      
+      // Type guard function to check if an object has a specific property
+      const hasProperty = <T extends object, K extends string>(obj: T, prop: K): 
+        obj is T & Record<K, unknown> => Object.prototype.hasOwnProperty.call(obj, prop);
       
       // Check the structure of the response
-      if (response && 'products' in response && Array.isArray(response.products)) {
+      if (hasProperty(wishlistData, 'products') && Array.isArray(wishlistData.products)) {
+        console.log('Processing wishlist with product IDs:', wishlistData.products);
         // Backend returned just an array of product IDs
         // Fetch full product details for each ID
-        const productPromises = response.products.map(async (productId: string) => {
+        const productPromises = wishlistData.products.map(async (productId: string) => {
           try {
             const product = await productService.getProductById(productId);
             return {
@@ -69,7 +127,7 @@ class WishlistService {
               rating: product.rating || 0,
               reviewCount: product.reviewCount || 0,
               _id: productId
-            } as WishlistItem; // Explicitly cast to WishlistItem
+            } as WishlistItem;
           } catch (err) {
             console.error(`Failed to fetch details for product ${productId}:`, err);
             // Return a minimal item with available data
@@ -82,24 +140,25 @@ class WishlistService {
               categoryName: '',
               rating: 0,
               reviewCount: 0
-            } as WishlistItem; // Explicitly cast to WishlistItem
+            } as WishlistItem;
           }
         });
         
         const items = await Promise.all(productPromises);
+        console.log('Transformed wishlist items:', items);
         
         // Return in the format our frontend expects
         return {
-          _id: typeof response._id === 'string' ? response._id : '',
-          user: typeof response.user === 'string' ? response.user : '',
+          _id: hasProperty(wishlistData, '_id') ? String(wishlistData._id) : '',
+          user: hasProperty(wishlistData, 'user') ? String(wishlistData.user) : '',
           items,
-          createdAt: typeof response.createdAt === 'string' ? response.createdAt : new Date().toISOString(),
-          updatedAt: typeof response.updatedAt === 'string' ? response.updatedAt : new Date().toISOString()
+          createdAt: hasProperty(wishlistData, 'createdAt') ? String(wishlistData.createdAt) : new Date().toISOString(),
+          updatedAt: hasProperty(wishlistData, 'updatedAt') ? String(wishlistData.updatedAt) : new Date().toISOString()
         };
-      } else if (response && 'items' in response && Array.isArray(response.items)) {
+      } else if (hasProperty(wishlistData, 'items') && Array.isArray(wishlistData.items)) {
         // Backend already returned full item details
         // Ensure each item has the required properties with defaults
-        const items = response.items.map((item) => ({
+        const items = wishlistData.items.map((item: Partial<WishlistItem>) => ({
           product: item.product || '',
           name: item.name || '',
           image: item.image || '',
@@ -112,22 +171,17 @@ class WishlistService {
         } as WishlistItem));
         
         return {
-          _id: typeof response._id === 'string' ? response._id : '',
-          user: typeof response.user === 'string' ? response.user : '',
+          _id: hasProperty(wishlistData, '_id') ? String(wishlistData._id) : '',
+          user: hasProperty(wishlistData, 'user') ? String(wishlistData.user) : '',
           items,
-          createdAt: typeof response.createdAt === 'string' ? response.createdAt : new Date().toISOString(),
-          updatedAt: typeof response.updatedAt === 'string' ? response.updatedAt : new Date().toISOString()
+          createdAt: hasProperty(wishlistData, 'createdAt') ? String(wishlistData.createdAt) : new Date().toISOString(),
+          updatedAt: hasProperty(wishlistData, 'updatedAt') ? String(wishlistData.updatedAt) : new Date().toISOString()
         };
       }
       
-      // Fallback: return empty wishlist
-      return {
-        _id: '',
-        user: '',
-        items: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
+      // If we couldn't process the response, return an empty wishlist
+      console.log('Could not process wishlist response, returning empty wishlist');
+      return emptyWishlist;
     } catch (err) {
       console.error('Error fetching wishlist:', err);
       throw err;
@@ -139,15 +193,23 @@ class WishlistService {
    */
   async addToWishlist(productId: string): Promise<Wishlist> {
     try {
-      return await api.post<Wishlist>('/api/users/wishlist', { productId });
+      console.log(`Adding product ${productId} to wishlist...`);
+      const response = await api.post<WishlistApiResponse>('/api/users/wishlist', { productId });
+      console.log('Add to wishlist response:', response);
+      
+      // Refresh wishlist data to get the updated list
+      return this.getUserWishlist();
     } catch (error) {
-      // Check if this is the "Product already in wishlist" error
-      if (error instanceof Error && error.message.includes('already in wishlist')) {
-        console.log('Product already in wishlist, fetching current wishlist');
-        // If the product is already in the wishlist, just return the current wishlist
+      // Check if the error is because product is already in wishlist
+      if (error instanceof Error && 
+          (error.message.includes('already in wishlist') || 
+           error.message.includes('Product already exists'))) {
+        console.log('Product already in wishlist, returning current wishlist');
+        // Return current wishlist instead of throwing
         return this.getUserWishlist();
       }
       // Re-throw any other errors
+      console.error('Error adding to wishlist:', error);
       throw error;
     }
   }
@@ -156,17 +218,48 @@ class WishlistService {
    * Check if product is in wishlist
    */
   async checkInWishlist(productId: string): Promise<{ inWishlist: boolean }> {
-    // First get the wishlist, then check if the product is in it
-    const wishlist = await this.getUserWishlist();
-    const inWishlist = wishlist.items.some(item => item.product === productId);
-    return { inWishlist };
+    try {
+      console.log(`Checking if product ${productId} is in wishlist...`);
+      const wishlist = await this.getUserWishlist();
+      
+      // Check if the product is in the wishlist
+      const inWishlist = wishlist.items.some(item => 
+        item.product === productId || item._id === productId
+      );
+      
+      console.log(`Product ${productId} in wishlist: ${inWishlist}`);
+      return { inWishlist };
+    } catch (error) {
+      console.error('Error checking if product is in wishlist:', error);
+      // Return false if there's an error, don't throw
+      return { inWishlist: false };
+    }
   }
 
   /**
    * Remove item from wishlist
    */
   async removeFromWishlist(productId: string): Promise<Wishlist> {
-    return api.delete<Wishlist>(`/api/users/wishlist/${productId}`);
+    try {
+      console.log(`Removing product ${productId} from wishlist...`);
+      const response = await api.delete<WishlistApiResponse>(`/api/users/wishlist/${productId}`);
+      console.log('Remove from wishlist response:', response);
+      
+      // Refresh wishlist data to get the updated list
+      return this.getUserWishlist();
+    } catch (error) {
+      // Check if the error is because product is not in wishlist
+      if (error instanceof Error && 
+          (error.message.includes('not in wishlist') || 
+           error.message.includes('Product not found'))) {
+        console.log('Product not in wishlist, returning current wishlist');
+        // Return current wishlist instead of throwing
+        return this.getUserWishlist();
+      }
+      // Re-throw any other errors
+      console.error('Error removing from wishlist:', error);
+      throw error;
+    }
   }
 
   /**

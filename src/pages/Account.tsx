@@ -17,12 +17,6 @@ import { useWishlist } from '@/context/wishlistUtils';
 import { useCart } from '@/context/cartUtils';
 import { WishlistItem } from '@/services/wishlistService';
 
-// Use the User type from userService - no need to redefine it
-// Adding a placeholder avatar helper since User doesn't include avatar
-// Using Product type from productService for wishlist items
-
-// The User type from userService doesn't have an avatar field
-
 // Form data interface for profile updates
 interface ProfileFormData {
   name: string;
