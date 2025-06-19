@@ -13,6 +13,9 @@ import { useToast } from '@/components/ui/use-toast';
 import UserService, { User as UserType } from '@/services/userService';
 import OrderService, { Order } from '@/services/orderService';
 import { Product } from '@/services/productService';
+import { useWishlist } from '@/context/wishlistUtils';
+import { useCart } from '@/context/cartUtils';
+import { WishlistItem } from '@/services/wishlistService';
 
 // Use the User type from userService - no need to redefine it
 // Adding a placeholder avatar helper since User doesn't include avatar
@@ -56,10 +59,9 @@ const Account = () => {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   
-  // State for wishlist data with loading and error handling
-  const [wishlist, setWishlist] = useState<Product[]>([]);
-  const [wishlistLoading, setWishlistLoading] = useState(false);
-  const [wishlistError, setWishlistError] = useState<string | null>(null);
+  // Use wishlist context instead of local state
+  const { wishlist, loading: wishlistLoading, error: wishlistError, removeFromWishlist } = useWishlist();
+  const { addToCart, loading: cartLoading } = useCart();
   
   // Update active tab when URL changes
   useEffect(() => {
@@ -109,26 +111,7 @@ const Account = () => {
     fetchOrders();
   }, [activeTab]);
 
-  // Fetch wishlist when wishlist tab is active
-  useEffect(() => {
-    const fetchWishlist = async () => {
-      if (activeTab === 'wishlist') {
-        try {
-          setWishlistLoading(true);
-          setWishlistError(null);
-          const wishlistData = await UserService.getWishlist();
-          setWishlist(wishlistData);
-        } catch (err) {
-          console.error('Failed to fetch wishlist data:', err);
-          setWishlistError('Failed to load your wishlist. Please try again later.');
-        } finally {
-          setWishlistLoading(false);
-        }
-      }
-    };
-    
-    fetchWishlist();
-  }, [activeTab]);
+  // No need to fetch wishlist data - it's handled by the WishlistContext
 
   const handleSaveProfile = async (formData: ProfileFormData) => {
     try {
@@ -174,8 +157,7 @@ const Account = () => {
 
   const handleRemoveFromWishlist = async (id: string) => {
     try {
-      await UserService.removeFromWishlist(id);
-      setWishlist(wishlist.filter(item => item._id !== id));
+      await removeFromWishlist(id);
       toast({
         title: "Removed from wishlist",
         description: "The item has been removed from your wishlist."
@@ -190,11 +172,21 @@ const Account = () => {
     }
   };
 
-  const handleAddToCart = (item: Product) => {
-    toast({
-      title: "Added to cart",
-      description: `${item.name} has been added to your cart.`
-    });
+  const handleAddToCart = async (item: WishlistItem) => {
+    try {
+      await addToCart(item.product, 1);
+      toast({
+        title: "Added to cart",
+        description: `${item.name} has been added to your cart.`
+      });
+    } catch (err) {
+      console.error('Failed to add to cart:', err);
+      toast({
+        title: "Failed to add to cart",
+        description: "There was an error adding this item to your cart.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleUpdatePassword = () => {
@@ -512,10 +504,10 @@ const Account = () => {
                           Try Again
                         </Button>
                       </div>
-                    ) : wishlist.length > 0 ? (
+                    ) : wishlist?.items?.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {wishlist.map((item) => (
-                          <div key={item._id} className="flex border rounded-lg overflow-hidden">
+                        {wishlist.items.map((item) => (
+                          <div key={item.product} className="flex border rounded-lg overflow-hidden">
                             <div className="w-24 h-24">
                               <img 
                                 src={item.image} 
@@ -529,12 +521,30 @@ const Account = () => {
                                 <p className="text-sm font-bold">${item.price.toFixed(2)}</p>
                               </div>
                               <div className="flex gap-2 mt-2">
-                                <Button size="sm" variant="outline" onClick={() => handleAddToCart(item)}>
-                                  <ShoppingCart className="h-4 w-4 mr-1" />
+                                <Button 
+                                  size="sm" 
+                                  variant="outline" 
+                                  onClick={() => handleAddToCart(item)}
+                                  disabled={cartLoading}
+                                >
+                                  {cartLoading ? (
+                                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                  ) : (
+                                    <ShoppingCart className="h-4 w-4 mr-1" />
+                                  )}
                                   Add to Cart
                                 </Button>
-                                <Button size="sm" variant="ghost" onClick={() => handleRemoveFromWishlist(item._id)}>
-                                  <X className="h-4 w-4" />
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost" 
+                                  onClick={() => handleRemoveFromWishlist(item.product)}
+                                  disabled={wishlistLoading}
+                                >
+                                  {wishlistLoading ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <X className="h-4 w-4" />
+                                  )}
                                 </Button>
                               </div>
                             </div>

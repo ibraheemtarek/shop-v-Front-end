@@ -4,9 +4,10 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Heart, ShoppingCart, Star, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useCart } from '@/context/cartUtils';
 import { useAuth } from '@/context/authUtils';
+import { useWishlist } from '@/context/wishlistUtils';
 import { useToast } from '@/components/ui/use-toast';
 
 export interface ProductProps {
@@ -42,17 +43,61 @@ const ProductCard = ({
   const { addToCart, loading: cartLoading } = useCart();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { addToWishlist, removeFromWishlist, isInWishlist, loading: wishlistLoading } = useWishlist();
   const [isAddingToCart, setIsAddingToCart] = useState(false);
+  const [isProcessingWishlist, setIsProcessingWishlist] = useState(false);
   const discountPercentage = originalPrice ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
   
-  const toggleWishlist = (e: React.MouseEvent) => {
+  // Check if product is in wishlist when component mounts or user changes
+  useEffect(() => {
+    if (user) {
+      const inWishlist = isInWishlist(id);
+      setIsWishlisted(inWishlist);
+    } else {
+      setIsWishlisted(false);
+    }
+  }, [user, id, isInWishlist]);
+  
+  const toggleWishlist = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsWishlisted(!isWishlisted);
-    toast({
-      title: isWishlisted ? "Removed from wishlist" : "Added to wishlist",
-      description: `${name} has been ${isWishlisted ? "removed from" : "added to"} your wishlist.`
-    });
+    
+    if (!user) {
+      toast({
+        title: "Please log in",
+        description: "You need to be logged in to add items to your wishlist.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    try {
+      setIsProcessingWishlist(true);
+      
+      if (isWishlisted) {
+        await removeFromWishlist(id);
+        toast({
+          title: "Removed from wishlist",
+          description: `${name} has been removed from your wishlist.`
+        });
+      } else {
+        await addToWishlist(id);
+        toast({
+          title: "Added to wishlist",
+          description: `${name} has been added to your wishlist.`
+        });
+      }
+      
+      setIsWishlisted(!isWishlisted);
+    } catch (err) {
+      toast({
+        title: "Wishlist action failed",
+        description: "There was an error updating your wishlist.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingWishlist(false);
+    }
   };
   
   const handleAddToCart = async (e: React.MouseEvent) => {
@@ -108,9 +153,14 @@ const ProductCard = ({
             isWishlisted && "text-red-500"
           )}
           onClick={toggleWishlist}
+          disabled={isProcessingWishlist || wishlistLoading}
         >
-          <Heart className="h-4 w-4" fill={isWishlisted ? "currentColor" : "none"} />
-          <span className="sr-only">Add to wishlist</span>
+          {isProcessingWishlist ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Heart className="h-4 w-4" fill={isWishlisted ? "currentColor" : "none"} />
+          )}
+          <span className="sr-only">{isWishlisted ? "Remove from wishlist" : "Add to wishlist"}</span>
         </Button>
         <div className="absolute bottom-0 left-0 right-0 translate-y-full opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100">
           <Button 

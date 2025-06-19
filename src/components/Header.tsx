@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/authUtils';
 import { useCart } from '@/context/cartUtils';
+import { useWishlist } from '@/context/wishlistUtils';
 import { 
   ShoppingCart, 
   User, 
@@ -22,6 +23,7 @@ const Header = () => {
   const { toast } = useToast();
   const { user, loading } = useAuth(); // Get user and loading state from AuthContext
   const { cart } = useCart(); // Get cart data from CartContext
+  const { wishlist } = useWishlist(); // Get wishlist data from WishlistContext
   
   // Determine login status from AuthContext
   const isLoggedIn = !!user;
@@ -114,6 +116,11 @@ const Header = () => {
           
           <Link to="/account?tab=wishlist" className="relative">
             <Heart className="h-5 w-5" />
+            {wishlist?.items?.length > 0 && (
+              <Badge className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center rounded-full p-0 text-xs">
+                {wishlist.items.length}
+              </Badge>
+            )}
           </Link>
           
           <Link to="/cart" className="relative">
@@ -194,6 +201,21 @@ const Header = () => {
                   onClick={toggleMenu}
                 >
                   My Account
+                </Link>
+                <Link 
+                  to="/account?tab=wishlist" 
+                  className="text-sm font-medium hover:text-brand-blue transition-colors"
+                  onClick={toggleMenu}
+                >
+                  <div className="flex items-center">
+                    <Heart className="mr-2 h-4 w-4" />
+                    <span>My Wishlist</span>
+                    {wishlist?.items?.length > 0 && (
+                      <Badge className="ml-2 h-5 w-5 flex items-center justify-center rounded-full p-0 text-xs">
+                        {wishlist.items.length}
+                      </Badge>
+                    )}
+                  </div>
                 </Link>
                 <Button 
                   variant="ghost" 

@@ -9,6 +9,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { AdminAuthProvider } from "./context/AdminAuthContext";
 import { CartProvider } from "./context/CartContext";
+import { WishlistProvider } from "./context/WishlistContext";
 import Index from "./pages/Index";
 import Products from "./pages/Products";
 import ProductDetail from "./pages/ProductDetail";
@@ -46,7 +47,8 @@ const App = () => {
     <AuthProvider>
       <AdminAuthProvider>
         <CartProvider>
-          <TooltipProvider>
+          <WishlistProvider>
+            <TooltipProvider>
           <Toaster />
           <Sonner />
           <BrowserRouter>
@@ -79,6 +81,7 @@ const App = () => {
             </Routes>
           </BrowserRouter>
           </TooltipProvider>
+          </WishlistProvider>
         </CartProvider>
       </AdminAuthProvider>
     </AuthProvider>

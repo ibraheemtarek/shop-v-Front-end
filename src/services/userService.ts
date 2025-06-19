@@ -149,7 +149,8 @@ class UserService {
    * Get user wishlist
    */
   async getWishlist(): Promise<Product[]> {
-    return api.get<Product[]>('/api/users/wishlist');
+    const response = await api.get<{ items: Product[] }>('/api/users/wishlist');
+    return response.items || [];
   }
   
   /**

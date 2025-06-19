@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,29 +9,20 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useToast } from '@/components/ui/use-toast';
 import { ShoppingCart, Heart, Star, ArrowLeft, Share2, Check, Loader2 } from 'lucide-react';
-import productService, { Product as ApiProduct } from '@/services/productService';
+import productService, { Product } from '@/services/productService';
 import { useCart } from '@/context/cartUtils';
 import { useAuth } from '@/context/authUtils';
-
-// Interface for the product data in this component
-interface Product {
-  id: string;
-  name: string;
-  price: number;
-  discountPrice?: number;
-  rating: number;
-  reviewCount: number;
-  description: string;
-  features: string[];
-  images: string[];
-  colors: string[];
-  sizes: string[];
-  inStock: boolean;
-  category: string;
-}
+import { useWishlist } from '@/context/wishlistUtils';
 
 const ProductDetail = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { toast } = useToast();
+  const { addToCart, loading: cartLoading } = useCart();
+  const { user } = useAuth();
+  const { addToWishlist, removeFromWishlist, isInWishlist: checkInWishlist, loading: wishlistLoading } = useWishlist();
+  
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,9 +30,8 @@ const ProductDetail = () => {
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const { toast } = useToast();
-  const { addToCart, loading: cartLoading } = useCart();
-  const { user } = useAuth();
+  const [isAddingToWishlist, setIsAddingToWishlist] = useState(false);
+  const [isInWishlist, setIsInWishlist] = useState(false);
   
   // Fetch product data from the API
   useEffect(() => {
@@ -52,36 +42,15 @@ const ProductDetail = () => {
       setError(null);
       
       try {
-        const apiProduct = await productService.getProductById(id);
-        
-        // Map API product to our component's Product interface
-        const mappedProduct: Product = {
-          id: apiProduct._id,
-          name: apiProduct.name,
-          price: apiProduct.price,
-          discountPrice: apiProduct.originalPrice && apiProduct.originalPrice > apiProduct.price ? apiProduct.originalPrice : undefined,
-          rating: apiProduct.rating || 0,
-          reviewCount: apiProduct.reviewCount || 0,
-          description: apiProduct.description,
-          features: apiProduct.features || [],
-          // Use the main image and any additional images
-          images: apiProduct.images?.length ? apiProduct.images : [apiProduct.image || '/placeholder.svg'],
-          colors: apiProduct.colors || [],
-          sizes: apiProduct.sizes || [],
-          inStock: apiProduct.inStock,
-          category: typeof apiProduct.category === 'string' ? apiProduct.category : 
-            (apiProduct.category && typeof apiProduct.category === 'object' && 'name' in apiProduct.category) ? 
-            (apiProduct.category as { name: string }).name : 'Uncategorized'
-        };
-        
-        setProduct(mappedProduct);
+        const productData = await productService.getProductById(id);
+        setProduct(productData);
         
         // Set initial selected color and size if available
-        if (mappedProduct.colors.length > 0) {
-          setSelectedColor(mappedProduct.colors[0]);
+        if (productData.colors?.length > 0) {
+          setSelectedColor(productData.colors[0]);
         }
-        if (mappedProduct.sizes.length > 0) {
-          setSelectedSize(mappedProduct.sizes[0]);
+        if (productData.sizes?.length > 0) {
+          setSelectedSize(productData.sizes[0]);
         }
       } catch (err) {
         console.error('Error fetching product:', err);
@@ -107,7 +76,7 @@ const ProductDetail = () => {
     if (!product) return;
     
     try {
-      await addToCart(product.id, quantity);
+      await addToCart(product._id, quantity);
       toast({
         title: "Added to cart",
         description: `${quantity} x ${product?.name} added to your cart.`,
@@ -122,11 +91,57 @@ const ProductDetail = () => {
     }
   };
   
-  const handleAddToWishlist = () => {
-    toast({
-      title: "Added to wishlist",
-      description: `${product?.name} added to your wishlist.`,
-    });
+  // Check if product is in wishlist
+  useEffect(() => {
+    if (product?._id && user) {
+      const inWishlist = checkInWishlist(product._id);
+      setIsInWishlist(inWishlist);
+    } else {
+      setIsInWishlist(false);
+    }
+  }, [product?._id, user, checkInWishlist]);
+
+  const handleAddToWishlist = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to add items to your wishlist.",
+        variant: "destructive"
+      });
+      navigate('/login', { state: { from: location.pathname } });
+      return;
+    }
+
+    if (!product?._id) return;
+
+    try {
+      setIsAddingToWishlist(true);
+      
+      if (isInWishlist) {
+        await removeFromWishlist(product._id);
+        setIsInWishlist(false);
+        toast({
+          title: "Removed from wishlist",
+          description: `${product.name} removed from your wishlist.`,
+        });
+      } else {
+        await addToWishlist(product._id);
+        setIsInWishlist(true);
+        toast({
+          title: "Added to wishlist",
+          description: `${product.name} added to your wishlist.`,
+        });
+      }
+    } catch (err) {
+      console.error('Wishlist operation failed:', err);
+      toast({
+        title: "Operation failed",
+        description: "There was a problem updating your wishlist. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAddingToWishlist(false);
+    }
   };
 
   if (loading) {
@@ -251,12 +266,12 @@ const ProductDetail = () => {
               </div>
               
               <div className="flex items-baseline gap-2">
-                {product.discountPrice ? (
+                {product.originalPrice && product.originalPrice > product.price ? (
                   <>
-                    <span className="text-3xl font-bold text-brand-blue">${product.discountPrice.toFixed(2)}</span>
-                    <span className="text-lg text-muted-foreground line-through">${product.price.toFixed(2)}</span>
+                    <span className="text-3xl font-bold text-brand-blue">${product.price.toFixed(2)}</span>
+                    <span className="text-lg text-muted-foreground line-through">${product.originalPrice.toFixed(2)}</span>
                     <Badge className="ml-2 bg-green-600">
-                      {Math.round((1 - product.discountPrice / product.price) * 100)}% OFF
+                      {Math.round((1 - product.price / product.originalPrice) * 100)}% OFF
                     </Badge>
                   </>
                 ) : (
@@ -364,12 +379,22 @@ const ProductDetail = () => {
                   )}
                 </Button>
                 <Button 
-                  variant="outline"
+                  variant={isInWishlist ? "secondary" : "outline"}
                   className="flex-1"
                   onClick={handleAddToWishlist}
+                  disabled={isAddingToWishlist}
                 >
-                  <Heart className="mr-2 h-4 w-4" />
-                  Wishlist
+                  {isAddingToWishlist ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {isInWishlist ? "Removing..." : "Adding..."}
+                    </>
+                  ) : (
+                    <>
+                      <Heart className={`mr-2 h-4 w-4 ${isInWishlist ? "fill-current" : ""}`} />
+                      {isInWishlist ? "In Wishlist" : "Add to Wishlist"}
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
