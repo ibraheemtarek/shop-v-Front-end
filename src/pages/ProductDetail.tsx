@@ -43,6 +43,7 @@ const ProductDetail = () => {
       
       try {
         const productData = await productService.getProductById(id);
+        console.log('Product data received:', productData); // Debug log
         setProduct(productData);
         
         // Set initial selected color and size if available
@@ -51,6 +52,11 @@ const ProductDetail = () => {
         }
         if (productData.sizes?.length > 0) {
           setSelectedSize(productData.sizes[0]);
+        }
+        
+        // Reset selected image index if needed
+        if (!productData.images || productData.images.length === 0) {
+          setSelectedImage(0);
         }
       } catch (err) {
         console.error('Error fetching product:', err);
@@ -225,28 +231,24 @@ const ProductDetail = () => {
               <div className="overflow-hidden rounded-lg border bg-white">
                 <AspectRatio ratio={1 / 1}>
                   <img 
-                    src={product.images[selectedImage]} 
+                    src={product.image} 
                     alt={product.name} 
                     className="h-full w-full object-cover"
                   />
                 </AspectRatio>
               </div>
               <div className="grid grid-cols-4 gap-2">
-                {product.images.map((image, index) => (
-                  <button 
-                    key={index} 
-                    className={`rounded-md overflow-hidden border ${index === selectedImage ? 'ring-2 ring-brand-blue' : ''}`}
-                    onClick={() => setSelectedImage(index)}
-                  >
-                    <AspectRatio ratio={1 / 1}>
-                      <img 
-                        src={image} 
-                        alt={`${product.name} thumbnail ${index + 1}`} 
-                        className="h-full w-full object-cover"
-                      />
-                    </AspectRatio>
-                  </button>
-                ))}
+                <button 
+                  className="rounded-md overflow-hidden border ring-2 ring-brand-blue"
+                >
+                  <AspectRatio ratio={1 / 1}>
+                    <img 
+                      src={product.image} 
+                      alt={product.name} 
+                      className="h-full w-full object-cover"
+                    />
+                  </AspectRatio>
+                </button>
               </div>
             </div>
             
