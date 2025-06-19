@@ -8,8 +8,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useToast } from '@/components/ui/use-toast';
-import { ShoppingCart, Heart, Star, ArrowLeft, Share2, Check } from 'lucide-react';
+import { ShoppingCart, Heart, Star, ArrowLeft, Share2, Check, Loader2 } from 'lucide-react';
 import productService, { Product as ApiProduct } from '@/services/productService';
+import { useCart } from '@/context/cartUtils';
+import { useAuth } from '@/context/authUtils';
 
 // Interface for the product data in this component
 interface Product {
@@ -38,6 +40,8 @@ const ProductDetail = () => {
   const [selectedSize, setSelectedSize] = useState('');
   const [quantity, setQuantity] = useState(1);
   const { toast } = useToast();
+  const { addToCart, loading: cartLoading } = useCart();
+  const { user } = useAuth();
   
   // Fetch product data from the API
   useEffect(() => {
@@ -90,11 +94,32 @@ const ProductDetail = () => {
     fetchProduct();
   }, [id]);
 
-  const handleAddToCart = () => {
-    toast({
-      title: "Added to cart",
-      description: `${quantity} x ${product?.name} added to your cart.`,
-    });
+  const handleAddToCart = async () => {
+    if (!user) {
+      toast({
+        title: "Please log in",
+        description: "You need to be logged in to add items to your cart.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!product) return;
+    
+    try {
+      await addToCart(product.id, quantity);
+      toast({
+        title: "Added to cart",
+        description: `${quantity} x ${product?.name} added to your cart.`,
+      });
+    } catch (err) {
+      console.error('Error adding to cart:', err);
+      toast({
+        title: "Failed to add to cart",
+        description: "There was an error adding this item to your cart. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
   
   const handleAddToWishlist = () => {
@@ -324,10 +349,19 @@ const ProductDetail = () => {
                 <Button 
                   className="flex-1"
                   onClick={handleAddToCart}
-                  disabled={!product.inStock}
+                  disabled={!product.inStock || cartLoading}
                 >
-                  <ShoppingCart className="mr-2 h-4 w-4" />
-                  Add to Cart
+                  {cartLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCart className="mr-2 h-4 w-4" />
+                      Add to Cart
+                    </>
+                  )}
                 </Button>
                 <Button 
                   variant="outline"

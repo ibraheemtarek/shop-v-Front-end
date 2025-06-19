@@ -1,4 +1,5 @@
 import api from './api';
+import API_CONFIG from '../config/api';
 import { Product } from './productService';
 
 export interface User {
@@ -93,7 +94,22 @@ class UserService {
    */
   async logout(): Promise<void> {
     try {
-      await api.post<{message: string}>('/api/auth/logout', {});
+      // Use fetch directly to handle empty responses properly
+      const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+        },
+        body: JSON.stringify({}),
+        credentials: 'include',
+      });
+      
+      // No need to parse the response as JSON
+      console.log('Logout successful with status:', response.status);
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Continue with logout process even if API call fails
     } finally {
       // Always clear local storage regardless of server response
       localStorage.removeItem('token');

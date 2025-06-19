@@ -1,68 +1,83 @@
 
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
-import { Trash2, ShoppingBag, Minus, Plus, ArrowRight } from 'lucide-react';
-
-interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  image: string;
-  quantity: number;
-}
+import { Trash2, ShoppingBag, Minus, Plus, ArrowRight, Loader2 } from 'lucide-react';
+import { useCart } from '@/context/cartUtils';
+import { useAuth } from '@/context/authUtils';
 
 const Cart = () => {
   const { toast } = useToast();
-  const [cartItems, setCartItems] = useState<CartItem[]>([
-    {
-      id: '1',
-      name: 'Wireless Bluetooth Headphones',
-      price: 99.99,
-      image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-      quantity: 1,
-    },
-    {
-      id: '5',
-      name: 'Professional Digital Camera',
-      price: 799.99,
-      image: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-      quantity: 1,
-    },
-  ]);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { cart, loading, error, updateCartItem, removeFromCart, clearCart, refreshCart } = useCart();
   
   const [promoCode, setPromoCode] = useState('');
   const [isApplyingPromo, setIsApplyingPromo] = useState(false);
 
-  const updateQuantity = (id: string, newQuantity: number) => {
+  // Redirect to login if user is not authenticated
+  useEffect(() => {
+    if (!user && !loading) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please log in to view your cart',
+        variant: 'destructive',
+      });
+      navigate('/login', { state: { from: '/cart' } });
+    }
+  }, [user, loading, navigate, toast]);
+
+  // Refresh cart when component mounts
+  useEffect(() => {
+    if (user) {
+      refreshCart();
+    }
+  }, [user, refreshCart]);
+
+  const updateQuantity = async (productId: string, newQuantity: number) => {
     if (newQuantity < 1) return;
     
-    setCartItems((items) =>
-      items.map((item) =>
-        item.id === id ? { ...item, quantity: newQuantity } : item
-      )
-    );
+    try {
+      await updateCartItem(productId, newQuantity);
+      toast({
+        title: 'Cart updated',
+        description: 'Item quantity has been updated.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Update failed',
+        description: 'Failed to update item quantity. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const removeItem = (id: string) => {
-    setCartItems((items) => items.filter((item) => item.id !== id));
-    
-    toast({
-      title: "Item removed",
-      description: "The item has been removed from your cart.",
-    });
+  const removeItem = async (productId: string) => {
+    try {
+      await removeFromCart(productId);
+      toast({
+        title: 'Item removed',
+        description: 'The item has been removed from your cart.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Remove failed',
+        description: 'Failed to remove item from cart. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const applyPromoCode = (e: React.FormEvent) => {
     e.preventDefault();
     setIsApplyingPromo(true);
     
-    // Simulate API call
+    // Simulate API call - this would be replaced with an actual API call in the future
     setTimeout(() => {
       toast({
         title: "Invalid promo code",
@@ -73,11 +88,27 @@ const Cart = () => {
     }, 1500);
   };
 
+  const handleClearCart = async () => {
+    try {
+      await clearCart();
+      toast({
+        title: 'Cart cleared',
+        description: 'All items have been removed from your cart.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Clear failed',
+        description: 'Failed to clear cart. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   // Calculate cart totals
-  const subtotal = cartItems.reduce(
+  const subtotal = cart?.items?.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0
-  );
+  ) || 0;
   const shipping = subtotal > 100 ? 0 : 9.99;
   const tax = subtotal * 0.1; // 10% tax rate
   const total = subtotal + shipping + tax;
@@ -88,18 +119,34 @@ const Cart = () => {
       <main className="flex-1 bg-brand-bg">
         <div className="container py-8">
           <h1 className="mb-6 text-3xl font-bold">Your Shopping Cart</h1>
-
-          {cartItems.length > 0 ? (
+          
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="h-12 w-12 animate-spin text-brand-blue" />
+              <p className="mt-4 text-lg">Loading your cart...</p>
+            </div>
+          ) : error ? (
+            <div className="rounded-lg border bg-red-50 p-6 text-center">
+              <p className="text-lg text-red-600">{error}</p>
+              <Button 
+                variant="outline" 
+                className="mt-4"
+                onClick={() => refreshCart()}
+              >
+                Try Again
+              </Button>
+            </div>
+          ) : cart?.items?.length ? (
             <div className="grid gap-8 md:grid-cols-3">
               {/* Cart Items */}
               <div className="md:col-span-2">
                 <div className="rounded-lg border bg-white">
                   <div className="p-6">
-                    <h2 className="text-xl font-semibold">Cart Items ({cartItems.length})</h2>
+                    <h2 className="text-xl font-semibold">Cart Items ({cart.items.length})</h2>
                   </div>
                   <Separator />
-                  {cartItems.map((item) => (
-                    <div key={item.id} className="flex flex-col sm:flex-row border-b p-6">
+                  {cart.items.map((item) => (
+                    <div key={item.product} className="flex flex-col sm:flex-row border-b p-6">
                       <div className="mb-4 sm:mb-0 sm:mr-6 h-24 w-24 flex-shrink-0">
                         <img
                           src={item.image}
@@ -111,7 +158,7 @@ const Cart = () => {
                         <div>
                           <div className="flex justify-between">
                             <Link
-                              to={`/product/${item.id}`}
+                              to={`/product/${item.product}`}
                               className="text-lg font-medium hover:text-brand-blue"
                             >
                               {item.name}
@@ -130,7 +177,7 @@ const Cart = () => {
                               variant="ghost"
                               size="icon"
                               className="h-full rounded-none"
-                              onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                              onClick={() => updateQuantity(item.product, item.quantity - 1)}
                               disabled={item.quantity <= 1}
                             >
                               <Minus className="h-3 w-3" />
@@ -142,7 +189,7 @@ const Cart = () => {
                               variant="ghost"
                               size="icon"
                               className="h-full rounded-none"
-                              onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                              onClick={() => updateQuantity(item.product, item.quantity + 1)}
                             >
                               <Plus className="h-3 w-3" />
                             </Button>
@@ -151,7 +198,7 @@ const Cart = () => {
                             variant="ghost"
                             size="sm"
                             className="text-muted-foreground hover:text-destructive"
-                            onClick={() => removeItem(item.id)}
+                            onClick={() => removeItem(item.product)}
                           >
                             <Trash2 className="mr-1 h-4 w-4" />
                             Remove
@@ -167,7 +214,7 @@ const Cart = () => {
                         Continue Shopping
                       </Link>
                     </Button>
-                    <Button variant="outline" onClick={() => setCartItems([])}>
+                    <Button variant="outline" onClick={handleClearCart}>
                       <Trash2 className="mr-2 h-4 w-4" />
                       Clear Cart
                     </Button>
