@@ -32,7 +32,8 @@ interface Product {
   id: string;
   name: string;
   price: number;
-  category: string;
+  category: string | { name: string }; // Category can be string or object with name
+  categoryName?: string; // Added to match ApiProduct interface
   stock: number;
   status: string;
   image?: string;
@@ -106,10 +107,26 @@ const AdminProducts = () => {
     fetchData();
   }, []);
 
-  const filteredProducts = products.filter(product => 
-    product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    product.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredProducts = products.filter(product => {
+    // Safely handle product name
+    const nameMatch = product.name && typeof product.name === 'string' ?
+      product.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+    
+    // Safely handle category which might be a string or an object
+    let categoryMatch = false;
+    if (product.category) {
+      if (typeof product.category === 'string') {
+        categoryMatch = product.category.toLowerCase().includes(searchQuery.toLowerCase());
+      } else if (typeof product.category === 'object' && product.category !== null) {
+        // If category is an object, try to use its name property if available
+        const categoryObj = product.category as { name?: string };
+        const categoryName = categoryObj.name || '';
+        categoryMatch = categoryName.toLowerCase().includes(searchQuery.toLowerCase());
+      }
+    }
+    
+    return nameMatch || categoryMatch;
+  });
 
   const handleAddProduct = async () => {
     try {
@@ -172,9 +189,12 @@ const AdminProducts = () => {
       const productData = {
         name: currentProduct.name,
         price: currentProduct.price,
-        category: currentProduct.category,
+        category: typeof currentProduct.category === 'string' ? currentProduct.category : (currentProduct.category as { name: string }).name,
+        categoryName: typeof currentProduct.category === 'string' ? currentProduct.category : (currentProduct.category as { name: string }).name,
+        image: currentProduct.image,
         inStock: currentProduct.status !== 'Out of Stock',
-        image: currentProduct.image
+        rating: 0,
+        reviewCount: 0
       };
       
       // Call API to update product
@@ -292,8 +312,9 @@ const AdminProducts = () => {
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="category" className="text-right">Category</Label>
                     <Select 
+                      name="category"
+                      defaultValue=""
                       onValueChange={(value) => setNewProduct({...newProduct, category: value})}
-                      defaultValue={newProduct.category}
                     >
                       <SelectTrigger className="col-span-3">
                         <SelectValue placeholder="Select category" />
@@ -393,7 +414,11 @@ const AdminProducts = () => {
                       <TableRow key={product.id}>
                         <TableCell className="font-medium">{product.name}</TableCell>
                         <TableCell>${product.price.toFixed(2)}</TableCell>
-                        <TableCell>{product.category}</TableCell>
+                        <TableCell>
+                          {typeof product.category === 'string' 
+                            ? product.category 
+                            : (product.category as { name: string }).name}
+                        </TableCell>
                         <TableCell>{product.stock}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={
@@ -445,8 +470,15 @@ const AdminProducts = () => {
                                   <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="edit-category" className="text-right">Category</Label>
                                     <Select 
+                                      name="category"
+                                      defaultValue={
+                                        typeof currentProduct?.category === 'string' 
+                                          ? currentProduct.category 
+                                          : currentProduct?.category 
+                                            ? (currentProduct.category as { name: string }).name 
+                                            : ''
+                                      }
                                       onValueChange={(value) => setCurrentProduct({...currentProduct, category: value})}
-                                      defaultValue={currentProduct.category}
                                     >
                                       <SelectTrigger className="col-span-3">
                                         <SelectValue placeholder="Select category" />

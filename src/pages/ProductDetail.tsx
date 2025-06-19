@@ -209,7 +209,9 @@ const ProductDetail = () => {
             <span className="mx-2">/</span>
             <Link to="/products" className="hover:text-foreground">Products</Link>
             <span className="mx-2">/</span>
-            <Link to={`/category/${product.category.toLowerCase()}`} className="hover:text-foreground">{product.category}</Link>
+            <Link to={`/category/${typeof product.category === 'string' ? product.category.toLowerCase() : product.categoryName?.toLowerCase() || 'uncategorized'}`} className="hover:text-foreground">
+              {typeof product.category === 'string' ? product.category : product.categoryName || 'Uncategorized'}
+            </Link>
             <span className="mx-2">/</span>
             <span className="text-foreground">{product.name}</span>
           </nav>

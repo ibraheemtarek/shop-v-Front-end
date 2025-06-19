@@ -121,7 +121,12 @@ const Category = () => {
     }
 
     // Search filter
-    if (searchQuery && !product.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+    if (searchQuery && product.name && typeof product.name === 'string') {
+      if (!product.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+        return false;
+      }
+    } else if (searchQuery) {
+      // If product name is not a string or is undefined, it doesn't match the search
       return false;
     }
     

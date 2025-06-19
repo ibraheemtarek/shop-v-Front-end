@@ -114,7 +114,13 @@ const Deals = () => {
     } else if (activeTab === 'featured') {
       setProducts(mockProducts.filter(product => product.isFeatured));
     } else {
-      setProducts(mockProducts.filter(product => product.category.toLowerCase() === activeTab));
+      setProducts(mockProducts.filter(product => {
+        // Safely handle category which might be a string or an object
+        const categoryStr = typeof product.category === 'string' 
+          ? product.category 
+          : 'uncategorized';
+        return categoryStr.toLowerCase() === activeTab;
+      }));
     }
   }, [activeTab]);
   
