@@ -131,12 +131,28 @@ const ProductDetail = () => {
           description: `${product.name} removed from your wishlist.`,
         });
       } else {
-        await addToWishlist(product._id);
-        setIsInWishlist(true);
-        toast({
-          title: "Added to wishlist",
-          description: `${product.name} added to your wishlist.`,
-        });
+        try {
+          await addToWishlist(product._id);
+          setIsInWishlist(true);
+          toast({
+            title: "Added to wishlist",
+            description: `${product.name} added to your wishlist.`,
+          });
+        } catch (error: Error | unknown) {
+          // Check if the error is because the product is already in the wishlist
+          if (error instanceof Error && error.message.includes('already in wishlist')) {
+            // Product is already in wishlist, just update the UI state
+            console.log('Product already in wishlist, updating UI state');
+            setIsInWishlist(true);
+            toast({
+              title: "Already in wishlist",
+              description: `${product.name} is already in your wishlist.`,
+            });
+          } else {
+            // Re-throw other errors to be caught by the outer catch block
+            throw error;
+          }
+        }
       }
     } catch (err) {
       console.error('Wishlist operation failed:', err);

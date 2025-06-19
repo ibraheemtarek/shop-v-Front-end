@@ -80,16 +80,33 @@ const ProductCard = ({
           title: "Removed from wishlist",
           description: `${name} has been removed from your wishlist.`
         });
+        setIsWishlisted(false);
       } else {
-        await addToWishlist(id);
-        toast({
-          title: "Added to wishlist",
-          description: `${name} has been added to your wishlist.`
-        });
+        try {
+          await addToWishlist(id);
+          toast({
+            title: "Added to wishlist",
+            description: `${name} has been added to your wishlist.`
+          });
+          setIsWishlisted(true);
+        } catch (error: Error | unknown) {
+          // Check if the error is because the product is already in the wishlist
+          if (error instanceof Error && error.message.includes('already in wishlist')) {
+            // Product is already in wishlist, just update the UI state
+            console.log('Product already in wishlist, updating UI state');
+            setIsWishlisted(true);
+            toast({
+              title: "Already in wishlist",
+              description: `${name} is already in your wishlist.`
+            });
+          } else {
+            // Re-throw other errors to be caught by the outer catch block
+            throw error;
+          }
+        }
       }
-      
-      setIsWishlisted(!isWishlisted);
     } catch (err) {
+      console.error('Wishlist operation failed:', err);
       toast({
         title: "Wishlist action failed",
         description: "There was an error updating your wishlist.",

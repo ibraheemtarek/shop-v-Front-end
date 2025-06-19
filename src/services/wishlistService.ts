@@ -138,7 +138,18 @@ class WishlistService {
    * Add item to wishlist
    */
   async addToWishlist(productId: string): Promise<Wishlist> {
-    return api.post<Wishlist>('/api/users/wishlist', { productId });
+    try {
+      return await api.post<Wishlist>('/api/users/wishlist', { productId });
+    } catch (error) {
+      // Check if this is the "Product already in wishlist" error
+      if (error instanceof Error && error.message.includes('already in wishlist')) {
+        console.log('Product already in wishlist, fetching current wishlist');
+        // If the product is already in the wishlist, just return the current wishlist
+        return this.getUserWishlist();
+      }
+      // Re-throw any other errors
+      throw error;
+    }
   }
 
   /**

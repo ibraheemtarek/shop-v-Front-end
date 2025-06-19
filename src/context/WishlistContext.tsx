@@ -47,10 +47,13 @@ export const WishlistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       setLoading(true);
       setError(null);
-      const updatedWishlist = await wishlistService.addToWishlist(productId);
-      setWishlist(updatedWishlist);
+      await wishlistService.addToWishlist(productId);
+      // Explicitly refresh the wishlist to ensure we have the latest data
+      await refreshWishlist();
+      console.log('Wishlist refreshed after adding item');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to add item to wishlist');
+      throw err; // Re-throw the error so it can be caught by the component
     } finally {
       setLoading(false);
     }
@@ -61,10 +64,13 @@ export const WishlistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       setLoading(true);
       setError(null);
-      const updatedWishlist = await wishlistService.removeFromWishlist(productId);
-      setWishlist(updatedWishlist);
+      await wishlistService.removeFromWishlist(productId);
+      // Explicitly refresh the wishlist to ensure we have the latest data
+      await refreshWishlist();
+      console.log('Wishlist refreshed after removing item');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to remove item from wishlist');
+      throw err; // Re-throw the error so it can be caught by the component
     } finally {
       setLoading(false);
     }
