@@ -27,7 +27,8 @@ const mapApiProductToProductProps = (product: Product): ProductProps => {
     price: product.price,
     originalPrice: product.originalPrice,
     image: product.image,
-    category: categoryValue, // Ensure this is always a string
+    category: categoryValue, 
+    categoryName: product.categoryName,
     rating: product.rating,
     reviewCount: product.reviewCount,
     isNew: product.isNewProduct,

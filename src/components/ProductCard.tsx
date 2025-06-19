@@ -16,6 +16,7 @@ export interface ProductProps {
   originalPrice?: number;
   image: string;
   category: string;
+  categoryName: string;
   rating: number;
   reviewCount: number;
   isNew?: boolean;
@@ -30,6 +31,7 @@ const ProductCard = ({
   originalPrice,
   image,
   category,
+  categoryName,
   rating,
   reviewCount,
   isNew,
@@ -132,7 +134,7 @@ const ProductCard = ({
       </div>
       <div className="p-4">
         <Link to={`/product/${id}`} className="block">
-          <p className="mb-1 text-xs text-muted-foreground">{category}</p>
+          <p className="mb-1 text-xs text-muted-foreground">{categoryName}</p>
           <h3 className="mb-1 font-medium line-clamp-1">{name}</h3>
           <div className="mb-2 flex items-center">
             <div className="flex items-center">
