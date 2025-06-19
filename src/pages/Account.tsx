@@ -506,50 +506,62 @@ const Account = () => {
                       </div>
                     ) : wishlist?.items?.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {wishlist.items.map((item) => (
-                          <div key={item.product} className="flex border rounded-lg overflow-hidden">
-                            <div className="w-24 h-24">
-                              <img 
-                                src={item.image} 
-                                alt={item.name} 
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <div className="flex flex-col justify-between p-3 flex-1">
-                              <div>
-                                <h3 className="font-medium line-clamp-1">{item.name}</h3>
-                                <p className="text-sm font-bold">${item.price.toFixed(2)}</p>
+                        {wishlist.items.map((item) => {
+                          // Ensure item has all required properties with defaults
+                          const enhancedItem = {
+                            ...item,
+                            category: item.category || '',
+                            categoryName: item.categoryName || '',
+                            rating: item.rating || 0,
+                            reviewCount: item.reviewCount || 0,
+                            _id: item._id || item.product
+                          };
+                          
+                          return (
+                            <div key={item.product} className="flex border rounded-lg overflow-hidden">
+                              <div className="w-24 h-24">
+                                <img 
+                                  src={item.image} 
+                                  alt={item.name} 
+                                  className="w-full h-full object-cover"
+                                />
                               </div>
-                              <div className="flex gap-2 mt-2">
-                                <Button 
-                                  size="sm" 
-                                  variant="outline" 
-                                  onClick={() => handleAddToCart(item)}
-                                  disabled={cartLoading}
-                                >
-                                  {cartLoading ? (
-                                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                  ) : (
-                                    <ShoppingCart className="h-4 w-4 mr-1" />
-                                  )}
-                                  Add to Cart
-                                </Button>
-                                <Button 
-                                  size="sm" 
-                                  variant="ghost" 
-                                  onClick={() => handleRemoveFromWishlist(item.product)}
-                                  disabled={wishlistLoading}
-                                >
-                                  {wishlistLoading ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <X className="h-4 w-4" />
-                                  )}
-                                </Button>
+                              <div className="flex flex-col justify-between p-3 flex-1">
+                                <div>
+                                  <h3 className="font-medium line-clamp-1">{item.name}</h3>
+                                  <p className="text-sm font-bold">${item.price.toFixed(2)}</p>
+                                </div>
+                                <div className="flex gap-2 mt-2">
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline" 
+                                    onClick={() => handleAddToCart(enhancedItem)}
+                                    disabled={cartLoading}
+                                  >
+                                    {cartLoading ? (
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    ) : (
+                                      <ShoppingCart className="h-4 w-4 mr-1" />
+                                    )}
+                                    Add to Cart
+                                  </Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="ghost" 
+                                    onClick={() => handleRemoveFromWishlist(item.product)}
+                                    disabled={wishlistLoading}
+                                  >
+                                    {wishlistLoading ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <X className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="text-center py-8">

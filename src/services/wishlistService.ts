@@ -5,6 +5,13 @@ export interface WishlistItem {
   name: string;
   image: string;
   price: number;
+  category?: string;
+  categoryName?: string;
+  rating?: number;
+  reviewCount?: number;
+  isNew?: boolean;
+  isOnSale?: boolean;
+  _id?: string; // For compatibility with Product type
 }
 
 export interface Wishlist {
