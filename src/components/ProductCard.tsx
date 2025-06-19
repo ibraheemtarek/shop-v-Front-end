@@ -3,8 +3,11 @@ import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Heart, ShoppingCart, Star } from 'lucide-react';
+import { Heart, ShoppingCart, Star, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { useCart } from '@/context/cartUtils';
+import { useAuth } from '@/context/authUtils';
+import { useToast } from '@/components/ui/use-toast';
 
 export interface ProductProps {
   id: string;
@@ -34,12 +37,51 @@ const ProductCard = ({
   className,
 }: ProductProps) => {
   const [isWishlisted, setIsWishlisted] = useState(false);
+  const { addToCart, loading: cartLoading } = useCart();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
   const discountPercentage = originalPrice ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
   
   const toggleWishlist = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsWishlisted(!isWishlisted);
+    toast({
+      title: isWishlisted ? "Removed from wishlist" : "Added to wishlist",
+      description: `${name} has been ${isWishlisted ? "removed from" : "added to"} your wishlist.`
+    });
+  };
+  
+  const handleAddToCart = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!user) {
+      toast({
+        title: "Please log in",
+        description: "You need to be logged in to add items to your cart.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    try {
+      setIsAddingToCart(true);
+      await addToCart(id, 1);
+      toast({
+        title: "Added to cart",
+        description: `${name} added to your cart.`
+      });
+    } catch (err) {
+      toast({
+        title: "Failed to add to cart",
+        description: "There was an error adding this item to your cart.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAddingToCart(false);
+    }
   };
   
   return (
@@ -69,9 +111,22 @@ const ProductCard = ({
           <span className="sr-only">Add to wishlist</span>
         </Button>
         <div className="absolute bottom-0 left-0 right-0 translate-y-full opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100">
-          <Button className="w-full rounded-none bg-brand-blue hover:bg-blue-600">
-            <ShoppingCart className="mr-2 h-4 w-4" />
-            Add to Cart
+          <Button 
+            className="w-full rounded-none bg-brand-blue hover:bg-blue-600" 
+            onClick={handleAddToCart}
+            disabled={isAddingToCart || cartLoading}
+          >
+            {isAddingToCart ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Adding...
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                Add to Cart
+              </>
+            )}
           </Button>
         </div>
       </div>

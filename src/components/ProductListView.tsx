@@ -3,13 +3,56 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProductProps } from './ProductCard';
-import { Heart, ShoppingCart, Star } from 'lucide-react';
+import { Heart, ShoppingCart, Star, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { useCart } from '@/context/cartUtils';
+import { useAuth } from '@/context/authUtils';
+import { useToast } from '@/components/ui/use-toast';
 
 interface ProductListViewProps {
   products: ProductProps[];
 }
 
 const ProductListView = ({ products }: ProductListViewProps) => {
+  const { addToCart, loading: cartLoading } = useCart();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [addingToCartId, setAddingToCartId] = useState<string | null>(null);
+  
+  const handleAddToCart = async (product: ProductProps) => {
+    if (!user) {
+      toast({
+        title: "Please log in",
+        description: "You need to be logged in to add items to your cart.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    try {
+      setAddingToCartId(product.id);
+      await addToCart(product.id, 1);
+      toast({
+        title: "Added to cart",
+        description: `${product.name} added to your cart.`
+      });
+    } catch (err) {
+      toast({
+        title: "Failed to add to cart",
+        description: "There was an error adding this item to your cart.",
+        variant: "destructive"
+      });
+    } finally {
+      setAddingToCartId(null);
+    }
+  };
+  
+  const handleAddToWishlist = (product: ProductProps) => {
+    toast({
+      title: "Added to wishlist",
+      description: `${product.name} has been added to your wishlist.`
+    });
+  };
   return (
     <div className="flex flex-col gap-4">
       {products.map((product) => (
@@ -91,12 +134,26 @@ const ProductListView = ({ products }: ProductListViewProps) => {
                   variant="outline" 
                   size="icon" 
                   className="rounded-full h-9 w-9"
+                  onClick={() => handleAddToWishlist(product)}
                 >
                   <Heart className="h-4 w-4" />
                 </Button>
-                <Button className="flex items-center gap-2">
-                  <ShoppingCart className="h-4 w-4" />
-                  <span>Add to Cart</span>
+                <Button 
+                  className="flex items-center gap-2"
+                  onClick={() => handleAddToCart(product)}
+                  disabled={addingToCartId === product.id || cartLoading}
+                >
+                  {addingToCartId === product.id ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      <span>Adding...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCart className="h-4 w-4 mr-2" />
+                      <span>Add to Cart</span>
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
