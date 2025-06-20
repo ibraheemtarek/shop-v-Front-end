@@ -1,14 +1,7 @@
 import api from './api';
 import productService from './productService';
-
-// Backend might return different response formats
-export interface WishlistBackendResponse {
-  _id: string;
-  user: string;
-  products: string[]; // Array of product IDs
-  createdAt: string;
-  updatedAt: string;
-}
+import { Product } from './productService';
+import UserService from './userService';
 
 // Our frontend needs more detailed product information
 export interface WishlistItem {
@@ -33,30 +26,25 @@ export interface Wishlist {
   updatedAt: string;
 }
 
-// For type safety when handling API responses
-export type WishlistApiResponse = {
-  // First format: direct product IDs
-  _id?: string;
-  user?: string;
-  products?: string[];
-  createdAt?: string;
-  updatedAt?: string;
-  
-  // Second format: full items
-  items?: Array<Partial<WishlistItem>>;
-  
-  // Third format: nested wishlist object
-  wishlist?: {
-    _id?: string;
-    user?: string;
-    products?: string[];
-    items?: Array<Partial<WishlistItem>>;
-    createdAt?: string;
-    updatedAt?: string;
+// For type safety when handling API responses from user model
+export interface UserWishlistResponse {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  wishlist: string[]; // Array of product IDs
+  createdAt: string;
+  updatedAt: string;
+  address?: {
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
   };
-  
-  [key: string]: unknown;
-};
+  phone?: string;
+}
 
 /**
  * Wishlist API service
@@ -83,9 +71,6 @@ class WishlistService {
   async getUserWishlist(): Promise<Wishlist> {
     try {
       console.log('Fetching user wishlist...');
-      // Get wishlist from backend (might just be product IDs)
-      const response = await api.get<WishlistApiResponse>('/api/users/wishlist');
-      console.log('Wishlist API response:', response);
       
       // Create a default empty wishlist
       const emptyWishlist: Wishlist = {
@@ -96,92 +81,70 @@ class WishlistService {
         updatedAt: new Date().toISOString()
       };
       
+      // Get user profile which includes the wishlist array of product IDs
+      const userData = await UserService.getUserProfile();
+      
       // Handle case where response is empty or undefined
-      if (!response) {
-        console.log('Empty response from wishlist API');
+      if (!userData || !userData.wishlist || !Array.isArray(userData.wishlist)) {
+        console.log('No wishlist data found in user profile');
         return emptyWishlist;
       }
       
-      // Check if we have a wishlist property that contains the actual data
-      const wishlistData = response.wishlist || response;
+      console.log('User wishlist product IDs:', userData.wishlist);
       
-      // Type guard function to check if an object has a specific property
-      const hasProperty = <T extends object, K extends string>(obj: T, prop: K): 
-        obj is T & Record<K, unknown> => Object.prototype.hasOwnProperty.call(obj, prop);
-      
-      // Check the structure of the response
-      if (hasProperty(wishlistData, 'products') && Array.isArray(wishlistData.products)) {
-        console.log('Processing wishlist with product IDs:', wishlistData.products);
-        // Backend returned just an array of product IDs
-        // Fetch full product details for each ID
-        const productPromises = wishlistData.products.map(async (productId: string) => {
-          try {
-            const product = await productService.getProductById(productId);
-            return {
-              product: productId,
-              name: product.name,
-              image: product.image,
-              price: product.price,
-              category: product.category || '',
-              categoryName: product.categoryName || '',
-              rating: product.rating || 0,
-              reviewCount: product.reviewCount || 0,
-              _id: productId
-            } as WishlistItem;
-          } catch (err) {
-            console.error(`Failed to fetch details for product ${productId}:`, err);
-            // Return a minimal item with available data
-            return {
-              product: productId,
-              name: 'Product unavailable',
-              image: '',
-              price: 0,
-              category: '',
-              categoryName: '',
-              rating: 0,
-              reviewCount: 0
-            } as WishlistItem;
-          }
-        });
-        
-        const items = await Promise.all(productPromises);
-        console.log('Transformed wishlist items:', items);
-        
-        // Return in the format our frontend expects
+      // If wishlist is empty, return empty wishlist
+      if (userData.wishlist.length === 0) {
         return {
-          _id: hasProperty(wishlistData, '_id') ? String(wishlistData._id) : '',
-          user: hasProperty(wishlistData, 'user') ? String(wishlistData.user) : '',
-          items,
-          createdAt: hasProperty(wishlistData, 'createdAt') ? String(wishlistData.createdAt) : new Date().toISOString(),
-          updatedAt: hasProperty(wishlistData, 'updatedAt') ? String(wishlistData.updatedAt) : new Date().toISOString()
-        };
-      } else if (hasProperty(wishlistData, 'items') && Array.isArray(wishlistData.items)) {
-        // Backend already returned full item details
-        // Ensure each item has the required properties with defaults
-        const items = wishlistData.items.map((item: Partial<WishlistItem>) => ({
-          product: item.product || '',
-          name: item.name || '',
-          image: item.image || '',
-          price: typeof item.price === 'number' ? item.price : 0,
-          category: item.category || '',
-          categoryName: item.categoryName || '',
-          rating: typeof item.rating === 'number' ? item.rating : 0,
-          reviewCount: typeof item.reviewCount === 'number' ? item.reviewCount : 0,
-          _id: item._id || item.product || ''
-        } as WishlistItem));
-        
-        return {
-          _id: hasProperty(wishlistData, '_id') ? String(wishlistData._id) : '',
-          user: hasProperty(wishlistData, 'user') ? String(wishlistData.user) : '',
-          items,
-          createdAt: hasProperty(wishlistData, 'createdAt') ? String(wishlistData.createdAt) : new Date().toISOString(),
-          updatedAt: hasProperty(wishlistData, 'updatedAt') ? String(wishlistData.updatedAt) : new Date().toISOString()
+          _id: userData._id || '',
+          user: userData._id || '',
+          items: [],
+          createdAt: userData.createdAt || new Date().toISOString(),
+          updatedAt: userData.updatedAt || new Date().toISOString()
         };
       }
       
-      // If we couldn't process the response, return an empty wishlist
-      console.log('Could not process wishlist response, returning empty wishlist');
-      return emptyWishlist;
+      // Fetch full product details for each ID in the wishlist array
+      const productPromises = userData.wishlist.map(async (productId) => {
+        try {
+          const product = await productService.getProductById(productId);
+          return {
+            product: productId,
+            name: product.name,
+            image: product.image,
+            price: product.price,
+            category: product.category || '',
+            categoryName: product.categoryName || '',
+            rating: product.rating || 0,
+            reviewCount: product.reviewCount || 0,
+            _id: productId
+          } as WishlistItem;
+        } catch (err) {
+          console.error(`Failed to fetch details for product ${productId}:`, err);
+          // Return a minimal item with available data
+          return {
+            product: productId,
+            name: 'Product unavailable',
+            image: '',
+            price: 0,
+            category: '',
+            categoryName: '',
+            rating: 0,
+            reviewCount: 0
+          } as WishlistItem;
+        }
+      });
+      
+      const items = await Promise.all(productPromises);
+      console.log('Transformed wishlist items:', items);
+      
+      // Return in the format our frontend expects
+      return {
+        _id: userData._id || '',
+        user: userData._id || '',
+        items,
+        createdAt: userData.createdAt || new Date().toISOString(),
+        updatedAt: userData.updatedAt || new Date().toISOString()
+      };
     } catch (err) {
       console.error('Error fetching wishlist:', err);
       throw err;
@@ -194,8 +157,8 @@ class WishlistService {
   async addToWishlist(productId: string): Promise<Wishlist> {
     try {
       console.log(`Adding product ${productId} to wishlist...`);
-      const response = await api.post<WishlistApiResponse>('/api/users/wishlist', { productId });
-      console.log('Add to wishlist response:', response);
+      // Call the API endpoint to add product to user's wishlist
+      await api.post('/api/users/wishlist', { productId });
       
       // Refresh wishlist data to get the updated list
       return this.getUserWishlist();
@@ -242,8 +205,8 @@ class WishlistService {
   async removeFromWishlist(productId: string): Promise<Wishlist> {
     try {
       console.log(`Removing product ${productId} from wishlist...`);
-      const response = await api.delete<WishlistApiResponse>(`/api/users/wishlist/${productId}`);
-      console.log('Remove from wishlist response:', response);
+      // Call the API endpoint to remove product from user's wishlist
+      await api.delete(`/api/users/wishlist/${productId}`);
       
       // Refresh wishlist data to get the updated list
       return this.getUserWishlist();
@@ -266,21 +229,27 @@ class WishlistService {
    * Clear wishlist
    */
   async clearWishlist(): Promise<Wishlist> {
-    // Since there's no specific endpoint for clearing the wishlist,
-    // we'll get all items and remove them one by one
-    const wishlist = await this.getUserWishlist();
-    
-    if (wishlist.items.length === 0) {
-      return wishlist;
+    try {
+      console.log('Clearing wishlist...');
+      // Since there's no specific endpoint for clearing the wishlist,
+      // we'll get all items and remove them one by one
+      const wishlist = await this.getUserWishlist();
+      
+      if (wishlist.items.length === 0) {
+        return wishlist;
+      }
+      
+      // Remove all items in parallel
+      await Promise.all(wishlist.items.map(item => 
+        this.removeFromWishlist(item.product)
+      ));
+      
+      // Return the updated wishlist
+      return this.getUserWishlist();
+    } catch (error) {
+      console.error('Error clearing wishlist:', error);
+      throw error;
     }
-    
-    // Remove all items in parallel
-    await Promise.all(wishlist.items.map(item => 
-      this.removeFromWishlist(item.product)
-    ));
-    
-    // Return the updated wishlist
-    return this.getUserWishlist();
   }
 }
 

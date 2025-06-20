@@ -19,7 +19,7 @@ export const WishlistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setError(null);
       const wishlistData = await wishlistService.getUserWishlist();
       setWishlist(wishlistData);
-    } catch (err: unknown) {
+    } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Failed to fetch wishlist');
     } finally {
       setLoading(false);
@@ -51,7 +51,7 @@ export const WishlistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Explicitly refresh the wishlist to ensure we have the latest data
       await refreshWishlist();
       console.log('Wishlist refreshed after adding item');
-    } catch (err: unknown) {
+    } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Failed to add item to wishlist');
       throw err; // Re-throw the error so it can be caught by the component
     } finally {
@@ -68,7 +68,7 @@ export const WishlistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Explicitly refresh the wishlist to ensure we have the latest data
       await refreshWishlist();
       console.log('Wishlist refreshed after removing item');
-    } catch (err: unknown) {
+    } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Failed to remove item from wishlist');
       throw err; // Re-throw the error so it can be caught by the component
     } finally {
@@ -83,7 +83,7 @@ export const WishlistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setError(null);
       const updatedWishlist = await wishlistService.clearWishlist();
       setWishlist(updatedWishlist);
-    } catch (err: unknown) {
+    } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Failed to clear wishlist');
     } finally {
       setLoading(false);
