@@ -22,10 +22,36 @@ class CategoryService {
       // Get categories from API
       const categories = await api.get<Category[]>('/api/categories');
       
-      // Get products to calculate accurate item counts
+      // Get products to calculate accurate item counts - use a smaller limit
       try {
-        const productsResponse = await api.get<{products: Array<{category: string}>}>('/api/products', { limit: '1000' });
-        const products = productsResponse.products || [];
+        // Use a smaller limit that the API can handle (50 is usually safe)
+        const productsResponse = await api.get<{products: Array<{category: string}>, total: number}>('/api/products', { limit: '50' });
+        let products = productsResponse.products || [];
+        const totalProducts = productsResponse.total || 0;
+        
+        // If there are more products than the limit, fetch them in batches
+        if (totalProducts > 50) {
+          // Calculate how many pages we need to fetch
+          const totalPages = Math.ceil(totalProducts / 50);
+          
+          // Fetch the remaining pages
+          for (let page = 2; page <= totalPages; page++) {
+            try {
+              const nextPageResponse = await api.get<{products: Array<{category: string}>}>('/api/products', { 
+                limit: '50', 
+                page: page.toString() 
+              });
+              
+              if (nextPageResponse.products && nextPageResponse.products.length > 0) {
+                products = [...products, ...nextPageResponse.products];
+              }
+            } catch (pageError) {
+              console.error(`Failed to fetch products page ${page}:`, pageError);
+              // Continue with what we have so far
+              break;
+            }
+          }
+        }
         
         // Calculate item counts for each category
         return categories.map(category => {
@@ -50,10 +76,36 @@ class CategoryService {
       // Get category from API
       const category = await api.get<Category>(`/api/categories/${slug}`);
       
-      // Get products to calculate accurate item count
+      // Get products to calculate accurate item count - use a smaller limit
       try {
-        const productsResponse = await api.get<{products: Array<{category: string}>}>('/api/products', { limit: '1000' });
-        const products = productsResponse.products || [];
+        // Use a smaller limit that the API can handle (50 is usually safe)
+        const productsResponse = await api.get<{products: Array<{category: string}>, total: number}>('/api/products', { limit: '50' });
+        let products = productsResponse.products || [];
+        const totalProducts = productsResponse.total || 0;
+        
+        // If there are more products than the limit, fetch them in batches
+        if (totalProducts > 50) {
+          // Calculate how many pages we need to fetch
+          const totalPages = Math.ceil(totalProducts / 50);
+          
+          // Fetch the remaining pages
+          for (let page = 2; page <= totalPages; page++) {
+            try {
+              const nextPageResponse = await api.get<{products: Array<{category: string}>}>('/api/products', { 
+                limit: '50', 
+                page: page.toString() 
+              });
+              
+              if (nextPageResponse.products && nextPageResponse.products.length > 0) {
+                products = [...products, ...nextPageResponse.products];
+              }
+            } catch (pageError) {
+              console.error(`Failed to fetch products page ${page}:`, pageError);
+              // Continue with what we have so far
+              break;
+            }
+          }
+        }
         
         // Calculate item count for this category
         const count = products.filter(product => product.category === category._id).length;
