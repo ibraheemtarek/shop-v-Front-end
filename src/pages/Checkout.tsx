@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -10,29 +10,19 @@ import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/components/ui/use-toast';
-import { CreditCard, LockKeyhole, ArrowLeft, CreditCardIcon, Wallet, Truck, CheckCircle, Circle } from 'lucide-react';
+import { CreditCard, LockKeyhole, ArrowLeft, CreditCardIcon, Wallet, Truck, CheckCircle, Circle, Loader2 } from 'lucide-react';
+import { useCart } from '@/context/cartUtils';
+import { useAuth } from '@/context/authUtils';
+import orderService from '@/services/orderService';
+import type { CreateOrderData, OrderItem, ShippingAddress } from '@/services/orderService';
 
-// Sample cart items (would come from context/state)
-const cartItems = [
-  {
-    id: '1',
-    name: 'Wireless Bluetooth Headphones',
-    price: 99.99,
-    image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-    quantity: 1,
-  },
-  {
-    id: '5',
-    name: 'Professional Digital Camera',
-    price: 799.99,
-    image: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80',
-    quantity: 1,
-  },
-];
+
 
 const Checkout = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { cart, loading: cartLoading, error: cartError, clearCart } = useCart();
   const [currentStep, setCurrentStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [email, setEmail] = useState('');
@@ -49,9 +39,42 @@ const Checkout = () => {
   });
   const [billingAddressSameAsShipping, setBillingAddressSameAsShipping] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState('credit-card');
+  
+  // Redirect to login if user is not authenticated
+  useEffect(() => {
+    if (!user && !cartLoading) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please log in to proceed with checkout',
+        variant: 'destructive',
+      });
+      navigate('/login', { state: { from: '/checkout' } });
+    }
+  }, [user, cartLoading, navigate, toast]);
+  
+  // Redirect to cart if cart is empty
+  useEffect(() => {
+    if (cart && cart.items.length === 0 && !cartLoading) {
+      toast({
+        title: 'Empty Cart',
+        description: 'Your cart is empty. Add some products before checkout.',
+      });
+      navigate('/cart');
+    }
+  }, [cart, cartLoading, navigate, toast]);
+  
+  // Set email from user data if available
+  useEffect(() => {
+    if (user && user.email) {
+      setEmail(user.email);
+    }
+  }, [user]);
 
   // Calculate order totals
-  const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const subtotal = cart?.items?.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0
+  ) || 0;
   const shipping = subtotal > 100 ? 0 : 9.99;
   const tax = subtotal * 0.1; // 10% tax rate
   const total = subtotal + shipping + tax;
@@ -72,19 +95,61 @@ const Checkout = () => {
 
   // Handle final order submission
   const handlePlaceOrder = async () => {
+    if (!cart || cart.items.length === 0) {
+      toast({
+        title: "Empty Cart",
+        description: "Your cart is empty. Add some products before placing an order.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsProcessing(true);
     
-    // Simulate order processing
-    setTimeout(() => {
+    try {
+      // Create order data with the correct structure based on backend model
+      // The backend expects product to be a MongoDB ObjectId (as string in frontend)
+      const orderData: CreateOrderData = {
+        orderItems: cart.items.map(item => {
+          return {
+            product: item.product,
+            name: item.name,
+            quantity: item.quantity,
+            image: item.image,
+            price: item.price
+          };
+        }) as unknown as CreateOrderData['orderItems'], // Type assertion with specific type
+        shippingAddress: shippingAddress,
+        paymentMethod: paymentMethod,
+        itemsPrice: subtotal,
+        taxPrice: tax,
+        shippingPrice: shipping,
+        totalPrice: total
+      };
+      
+      // Create order via API
+      const createdOrder = await orderService.createOrder(orderData);
+      
+      // Clear the cart after successful order
+      await clearCart();
+      
       toast({
         title: "Order Placed Successfully!",
         description: "Your order has been placed and will be processed shortly.",
       });
+      
+      // Navigate to success page with the real order ID
+      navigate(`/order-success/${createdOrder._id}`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "There was a problem placing your order. Please try again.";
+      toast({
+        title: "Order Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
       setIsProcessing(false);
-      // Generate random order ID and navigate to success page
-      const orderId = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
-      navigate(`/order-success/${orderId}`);
-    }, 2000);
+    }
   };
 
   return (
@@ -92,6 +157,24 @@ const Checkout = () => {
       <Header />
       <main className="flex-1 bg-brand-bg py-8">
         <div className="container">
+          {cartLoading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="h-12 w-12 animate-spin text-brand-blue" />
+              <p className="mt-4 text-lg">Loading your cart...</p>
+            </div>
+          ) : cartError ? (
+            <div className="rounded-lg border bg-red-50 p-6 text-center">
+              <p className="text-lg text-red-600">{cartError}</p>
+              <Button 
+                variant="outline" 
+                className="mt-4"
+                onClick={() => navigate('/cart')}
+              >
+                Return to Cart
+              </Button>
+            </div>
+          ) : (
+            <>
           <div className="mb-8">
             <Link to="/cart" className="inline-flex items-center text-sm text-muted-foreground hover:text-brand-blue">
               <ArrowLeft className="mr-2 h-4 w-4" /> Back to Cart
@@ -436,8 +519,8 @@ const Checkout = () => {
                   <div>
                     <h3 className="text-lg font-medium">Items in Your Order</h3>
                     <div className="mt-2 space-y-4">
-                      {cartItems.map((item) => (
-                        <div key={item.id} className="flex items-start rounded border p-4">
+                      {cart?.items.map((item) => (
+                        <div key={item.product} className="flex items-start rounded border p-4">
                           <img
                             src={item.image}
                             alt={item.name}
@@ -475,27 +558,22 @@ const Checkout = () => {
             </div>
 
             {/* Order Summary */}
-            <div>
-              <div className="sticky top-20 rounded-lg border bg-white shadow-sm">
-                <div className="p-6">
-                  <h2 className="text-xl font-semibold">Order Summary</h2>
-                </div>
-                <Separator />
-                <div className="p-6">
-                  {/* Order items */}
-                  <div className="space-y-4">
-                    {cartItems.map((item) => (
-                      <div key={item.id} className="flex justify-between">
-                        <span>
-                          {item.name} <span className="text-muted-foreground">× {item.quantity}</span>
+            <div className="md:col-span-1 space-y-4">
+              <div className="rounded-lg border bg-white p-6">
+                <h2 className="mb-4 text-xl font-semibold">Order Summary</h2>
+                <div className="space-y-3">
+                  {cart?.items.map((item) => (
+                    <div key={item.product} className="flex justify-between">
+                      <div className="flex items-center">
+                        <span className="text-sm text-muted-foreground">
+                          {item.quantity} × {item.name}
                         </span>
-                        <span>${(item.price * item.quantity).toFixed(2)}</span>
                       </div>
-                    ))}
-                  </div>
-
-                  <Separator className="my-4" />
-
+                      <span className="text-sm">
+                        ${(item.price * item.quantity).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
                   {/* Order calculations */}
                   <div className="space-y-2">
                     <div className="flex justify-between">
@@ -545,6 +623,8 @@ const Checkout = () => {
               </div>
             </div>
           </div>
+            </>
+          )}
         </div>
       </main>
       <Footer />
