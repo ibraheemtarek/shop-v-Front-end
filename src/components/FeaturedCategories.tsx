@@ -42,7 +42,7 @@ const FeaturedCategories = () => {
       <div className="container">
         <div className="mb-8 flex flex-wrap items-center justify-between">
           <h2 className="text-2xl md:text-3xl font-bold">Shop by Category</h2>
-          <Link to="/products" className="text-brand-blue hover:underline">
+          <Link to="/categories" className="text-brand-blue hover:underline">
             View all categories
           </Link>
         </div>
