@@ -1,4 +1,5 @@
 import api from './api';
+import categoryService from './categoryService';
 
 export interface Product {
   _id: string;
@@ -80,23 +81,75 @@ class ProductService {
 
   /**
    * Create a new product (admin only)
+   * Also updates the corresponding category's item count
    */
   async createProduct(productData: Omit<Product, '_id' | 'createdAt' | 'updatedAt'>): Promise<Product> {
-    return api.post<Product>('/api/products', productData);
+    const newProduct = await api.post<Product>('/api/products', productData);
+    
+    // Update the category item count if a category is specified
+    if (newProduct.category) {
+      try {
+        // Refresh all categories to update item counts
+        await categoryService.getCategories();
+      } catch (error) {
+        console.error('Failed to refresh category item counts after product creation:', error);
+      }
+    }
+    
+    return newProduct;
   }
 
   /**
    * Update a product (admin only)
+   * Also updates the corresponding category's item count if the category changes
    */
   async updateProduct(id: string, productData: Partial<Product>): Promise<Product> {
-    return api.put<Product>(`/api/products/${id}`, productData);
+    // If category is being updated, we need to refresh category counts
+    const shouldRefreshCategories = 'category' in productData;
+    
+    const updatedProduct = await api.put<Product>(`/api/products/${id}`, productData);
+    
+    // Update category item counts if needed
+    if (shouldRefreshCategories) {
+      try {
+        // Refresh all categories to update item counts
+        await categoryService.getCategories();
+      } catch (error) {
+        console.error('Failed to refresh category item counts after product update:', error);
+      }
+    }
+    
+    return updatedProduct;
   }
 
   /**
    * Delete a product (admin only)
+   * Also updates category item counts after deletion
    */
   async deleteProduct(id: string): Promise<{ message: string }> {
-    return api.delete<{ message: string }>(`/api/products/${id}`);
+    // Get the product first to know which category needs updating
+    let categoryToUpdate: string | null = null;
+    try {
+      const product = await this.getProductById(id);
+      categoryToUpdate = product.category;
+    } catch (error) {
+      console.error('Failed to get product before deletion:', error);
+    }
+    
+    // Delete the product
+    const result = await api.delete<{ message: string }>(`/api/products/${id}`);
+    
+    // Update category item counts if we know which category was affected
+    if (categoryToUpdate) {
+      try {
+        // Refresh all categories to update item counts
+        await categoryService.getCategories();
+      } catch (error) {
+        console.error('Failed to refresh category item counts after product deletion:', error);
+      }
+    }
+    
+    return result;
   }
 
   /**
