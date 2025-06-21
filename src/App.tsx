@@ -24,6 +24,7 @@ import NotFound from "./pages/NotFound";
 import Contact from "./pages/Contact";
 import About from "./pages/About";
 import Category from "./pages/Category";
+import Categories from "./pages/Categories";
 import Checkout from "./pages/Checkout";
 import OrderDetail from "./pages/OrderDetail";
 import OrderSuccess from "./pages/OrderSuccess";
@@ -66,6 +67,7 @@ const App = () => {
               <Route path="/account" element={<Account />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/about" element={<About />} />
+              <Route path="/categories" element={<Categories />} />
               <Route path="/category" element={<Category />} />
               <Route path="/category/:slug" element={<Category />} />
               <Route path="/checkout" element={<Checkout />} />
