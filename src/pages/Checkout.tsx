@@ -403,16 +403,16 @@ const Checkout = () => {
                       </div>
 
                       {/* Cash on Delivery Option */}
-                      <div className={`rounded-md border p-4 ${paymentMethod === 'cash-on-delivery' ? 'border-brand-blue bg-blue-50' : ''}`}>
+                      <div className={`rounded-md border p-4 ${paymentMethod === 'cod' ? 'border-brand-blue bg-blue-50' : ''}`}>
                         <div className="flex items-center space-x-2">
-                          <RadioGroupItem id="cash-on-delivery" value="cash-on-delivery" />
-                          <Label htmlFor="cash-on-delivery" className="flex items-center">
+                          <RadioGroupItem id="cod" value="cod" />
+                          <Label htmlFor="cod" className="flex items-center">
                             <Wallet className="mr-2 h-5 w-5" />
                             Cash on Delivery
                           </Label>
                         </div>
                         
-                        {paymentMethod === 'cash-on-delivery' && (
+                        {paymentMethod === 'cod' && (
                           <div className="mt-4">
                             <p className="text-sm text-muted-foreground">Pay with cash upon delivery. Please have the exact amount ready for our delivery person.</p>
                           </div>
@@ -506,7 +506,7 @@ const Checkout = () => {
                           <span>PayPal</span>
                         </div>
                       )}
-                      {paymentMethod === 'cash-on-delivery' && (
+                      {paymentMethod === 'cod' && (
                         <div className="flex items-center">
                           <Wallet className="mr-2 h-5 w-5 text-muted-foreground" />
                           <span>Cash on Delivery</span>
