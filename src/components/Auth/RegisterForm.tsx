@@ -79,7 +79,7 @@ const RegisterForm = ({ onSuccess }: RegisterFormProps) => {
     
     try {
       // Call the register API endpoint
-      const response = await apiService.post<RegisterResponse>('/users/register', {
+      const response = await apiService.post<RegisterResponse>('/api/users/register', {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
