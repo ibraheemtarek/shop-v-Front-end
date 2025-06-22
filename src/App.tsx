@@ -34,6 +34,8 @@ import ShippingReturns from "./pages/ShippingReturns";
 import Deals from "./pages/Deals";
 import TestLogin from "./pages/TestLogin";
 import CreateAdmin from "./pages/CreateAdmin";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -60,6 +62,8 @@ const App = () => {
               <Route path="/cart" element={<Cart />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/admin/login" element={<AdminLogin />} />
               <Route element={<AdminProtectedRoute />}>
                 <Route path="/admin/*" element={<Admin />} />
