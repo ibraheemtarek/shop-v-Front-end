@@ -1,81 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Package, Truck, CheckCircle } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
+import orderService, { Order } from '@/services/orderService';
 
-// Sample order data (would come from API)
-const sampleOrders = [
-  {
-    id: "ORD-12345",
-    date: "2023-05-10T10:30:00Z",
-    status: "delivered",
-    total: 149.97,
-    paymentMethod: "Credit Card",
-    trackingNumber: "1ZW4X6789012345678",
-    shippingAddress: {
-      name: "John Doe",
-      line1: "123 Main Street",
-      line2: "Apt 4B",
-      city: "New York",
-      state: "NY",
-      postal_code: "10001",
-      country: "United States"
-    },
-    items: [
-      {
-        id: "1",
-        name: "Wireless Bluetooth Headphones",
-        price: 99.99,
-        quantity: 1,
-        image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80"
-      },
-      {
-        id: "4",
-        name: "Stainless Steel Water Bottle",
-        price: 19.99,
-        quantity: 2,
-        image: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80"
-      },
-      {
-        id: "6",
-        name: "Leather Wallet",
-        price: 49.99,
-        quantity: 1,
-        image: "https://images.unsplash.com/photo-1627123424574-724758594e93?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80"
-      }
-    ]
-  },
-  {
-    id: "ORD-67890",
-    date: "2023-06-15T14:45:00Z",
-    status: "processing",
-    total: 299.99,
-    paymentMethod: "PayPal",
-    trackingNumber: null,
-    shippingAddress: {
-      name: "Jane Smith",
-      line1: "456 Oak Avenue",
-      line2: "",
-      city: "San Francisco",
-      state: "CA",
-      postal_code: "94107",
-      country: "United States"
-    },
-    items: [
-      {
-        id: "5",
-        name: "Professional Digital Camera",
-        price: 799.99,
-        quantity: 1,
-        image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80"
-      }
-    ]
-  }
-];
+// Status badge variants
 
 // Status badge variants
 const getStatusBadge = (status: string) => {
@@ -83,29 +17,48 @@ const getStatusBadge = (status: string) => {
     'processing': { variant: 'outline', label: 'Processing' },
     'shipped': { variant: 'secondary', label: 'Shipped' },
     'delivered': { variant: 'default', label: 'Delivered' },
-    'canceled': { variant: 'destructive', label: 'Canceled' }
+    'cancelled': { variant: 'destructive', label: 'Cancelled' }
   };
   return variants[status] || { variant: 'outline', label: status };
 };
 
 const OrderDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const [order, setOrder] = useState<any>(null);
+  const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Simulate API call to fetch order details
-    setLoading(true);
-    setTimeout(() => {
-      // Fixed: ensure we have a valid ID to search for
-      const orderId = id || '';
-      const foundOrder = sampleOrders.find(order => order.id === orderId);
-      console.log("Looking for order with ID:", orderId);
-      console.log("Found order:", foundOrder);
-      setOrder(foundOrder || null);
-      setLoading(false);
-    }, 1000);
-  }, [id]);
+    const fetchOrderDetails = async () => {
+      if (!id) {
+        toast({
+          title: "Error",
+          description: "Order ID is missing",
+          variant: "destructive"
+        });
+        navigate('/account');
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const orderData = await orderService.getOrderById(id);
+        setOrder(orderData);
+      } catch (error) {
+        console.error("Failed to fetch order details:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load order details",
+          variant: "destructive"
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOrderDetails();
+  }, [id, toast, navigate]);
 
   if (loading) {
     return (
@@ -153,12 +106,12 @@ const OrderDetail = () => {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
-  }).format(new Date(order.date));
+  }).format(new Date(order.createdAt));
 
-  // Calculate order summary
-  const subtotal = order.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
-  const shipping = subtotal > 100 ? 0 : 9.99;
-  const tax = subtotal * 0.1; // 10% tax
+  // Get order summary values from the order data
+  const subtotal = order.itemsPrice;
+  const shipping = order.shippingPrice;
+  const tax = order.taxPrice;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -173,7 +126,7 @@ const OrderDetail = () => {
               </Link>
             </Button>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-              <h1 className="text-3xl font-bold">Order {order.id}</h1>
+              <h1 className="text-3xl font-bold">Order {order.orderNumber || order._id}</h1>
               <div className="mt-2 sm:mt-0">
                 <Badge 
                   variant={statusBadge.variant as any} 
@@ -187,7 +140,7 @@ const OrderDetail = () => {
           </div>
 
           {/* Order Status Timeline */}
-          {order.status !== 'canceled' && (
+          {order.status !== 'cancelled' && (
             <div className="mb-8 rounded-lg border bg-white p-6">
               <h2 className="mb-4 text-xl font-semibold">Order Status</h2>
               <div className="relative flex justify-between">
@@ -212,12 +165,15 @@ const OrderDetail = () => {
                 </div>
               </div>
               
-              {order.trackingNumber && (
+              {order.isDelivered && order.deliveredAt && (
                 <div className="mt-6 rounded border bg-gray-50 p-4">
-                  <p className="text-sm text-muted-foreground">Tracking Number: <span className="font-medium text-brand-blue">{order.trackingNumber}</span></p>
-                  <Button variant="link" className="p-0 text-brand-blue">
-                    Track Package
-                  </Button>
+                  <p className="text-sm text-muted-foreground">Delivered on: <span className="font-medium text-brand-blue">
+                    {new Date(order.deliveredAt).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </span></p>
                 </div>
               )}
             </div>
@@ -231,8 +187,8 @@ const OrderDetail = () => {
                   <h2 className="text-xl font-semibold">Order Items</h2>
                 </div>
                 <Separator />
-                {order.items.map((item: any) => (
-                  <div key={item.id} className="flex border-b p-6">
+                {order.orderItems.map((item) => (
+                  <div key={item.product} className="flex border-b p-6">
                     <div className="mr-6 h-24 w-24 flex-shrink-0">
                       <img
                         src={item.image}
@@ -243,7 +199,7 @@ const OrderDetail = () => {
                     <div className="flex flex-1 flex-col justify-between">
                       <div>
                         <Link
-                          to={`/product/${item.id}`}
+                          to={`/product/${item.product}`}
                           className="text-lg font-medium hover:text-brand-blue"
                         >
                           {item.name}
@@ -254,7 +210,7 @@ const OrderDetail = () => {
                       </div>
                       <div className="mt-4 flex items-center justify-between">
                         <Button variant="outline" size="sm" asChild>
-                          <Link to={`/product/${item.id}`}>Buy Again</Link>
+                          <Link to={`/product/${item.product}`}>Buy Again</Link>
                         </Button>
                         <p className="font-medium">
                           ${(item.price * item.quantity).toFixed(2)}
@@ -270,13 +226,14 @@ const OrderDetail = () => {
                 <div className="rounded-lg border bg-white p-6">
                   <h2 className="mb-4 text-lg font-semibold">Shipping Address</h2>
                   <address className="not-italic">
-                    <p className="font-medium">{order.shippingAddress.name}</p>
-                    <p>{order.shippingAddress.line1}</p>
-                    {order.shippingAddress.line2 && <p>{order.shippingAddress.line2}</p>}
+                    <p className="font-medium">{order.shippingAddress.firstName} {order.shippingAddress.lastName}</p>
+                    <p>{order.shippingAddress.address}</p>
+                    {order.shippingAddress.apartment && <p>{order.shippingAddress.apartment}</p>}
                     <p>
-                      {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.postal_code}
+                      {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zipCode}
                     </p>
                     <p>{order.shippingAddress.country}</p>
+                    {order.shippingAddress.phone && <p>Phone: {order.shippingAddress.phone}</p>}
                   </address>
                 </div>
                 <div className="rounded-lg border bg-white p-6">
@@ -315,7 +272,7 @@ const OrderDetail = () => {
                   <Separator />
                   <div className="flex justify-between font-medium">
                     <span>Total</span>
-                    <span>${order.total.toFixed(2)}</span>
+                    <span>${order.totalPrice.toFixed(2)}</span>
                   </div>
                 </div>
               </div>

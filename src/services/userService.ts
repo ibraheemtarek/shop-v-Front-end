@@ -47,8 +47,13 @@ export interface ForgotPasswordData {
 }
 
 export interface ResetPasswordData {
-  token: string;
   password: string;
+  confirmPassword?: string;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+  token?: string;
 }
 
 /**
@@ -170,10 +175,11 @@ class UserService {
 
   /**
    * Reset password using token
-   * @param data Token and new password
+   * @param token Reset token from email
+   * @param data Password data
    */
-  async resetPassword(data: ResetPasswordData): Promise<{ message: string }> {
-    return api.post<{ message: string }>('/api/users/reset-password', data);
+  async resetPassword(token: string, data: ResetPasswordData): Promise<ResetPasswordResponse> {
+    return api.post<ResetPasswordResponse>(`/api/users/reset-password?token=${token}`, data);
   }
 
   /**
