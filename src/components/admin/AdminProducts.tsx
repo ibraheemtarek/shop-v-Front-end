@@ -24,8 +24,10 @@ import {
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import productService, { Product as ApiProduct } from '@/services/productService';
+import productService, { getFullImageUrl } from '@/services/productService';
 import categoryService, { Category } from '@/services/categoryService';
+import { ProductImageUpload } from './forms/ProductImageUpload';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // Interface for our local product data structure
 interface Product {
@@ -57,6 +59,8 @@ const AdminProducts = () => {
     status: 'In Stock',
     image: ''
   });
+  const [tempUploadedImage, setTempUploadedImage] = useState<string>('');
+  const [tempEditUploadedImage, setTempEditUploadedImage] = useState<string>('');
 
   const { toast } = useToast();
 
@@ -130,20 +134,115 @@ const AdminProducts = () => {
 
   const handleAddProduct = async () => {
     try {
+      // Validate inputs
+      if (!newProduct.name.trim()) {
+        toast({
+          title: "Validation Error",
+          description: "Product name is required",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (!newProduct.category) {
+        toast({
+          title: "Validation Error",
+          description: "Product category is required",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Prepare the image for the API call
+      let imageToUse = newProduct.image || '';
+      let hasBase64Image = false;
+      let fileToUpload: File | null = null;
+      
+      // If we have a base64 image, prepare it for upload
+      if (tempUploadedImage && tempUploadedImage.startsWith('data:')) {
+        hasBase64Image = true;
+        
+        try {
+          // Convert base64 to file for later upload
+          const base64Response = await fetch(tempUploadedImage);
+          const blob = await base64Response.blob();
+          
+          // Determine the file extension from the MIME type
+          const mimeType = blob.type || 'image/jpeg';
+          const fileExtension = mimeType.split('/')[1] || 'jpg';
+          
+          // Create a file with a proper name and type
+          fileToUpload = new File(
+            [blob], 
+            `product-image.${fileExtension}`, 
+            { type: mimeType }
+          );
+          
+          // Use a placeholder URL for now
+          imageToUse = 'https://placehold.co/600x400?text=' + encodeURIComponent(newProduct.name);
+        } catch (error) {
+          console.error('Error preparing image file:', error);
+          toast({
+            title: "Error",
+            description: "Failed to process the image. Please try again.",
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+      
       // Prepare data for API
+      // Find the category ID based on the selected category name
+      const selectedCategory = categories.find(cat => 
+        cat.name === newProduct.category || 
+        (typeof newProduct.category === 'object' && newProduct.category?.name === cat.name)
+      );
+      
+      const categoryId = selectedCategory?._id || '';
+      const categoryName = selectedCategory?.name || 
+        (typeof newProduct.category === 'string' ? newProduct.category : 
+         typeof newProduct.category === 'object' ? newProduct.category.name : '');
+      
       const productData = {
         name: newProduct.name,
         price: newProduct.price,
-        description: `${newProduct.name} - ${newProduct.category}`,
-        category: newProduct.category,
-        image: newProduct.image || 'https://placehold.co/600x400?text=Product+Image',
+        description: `${newProduct.name} - ${categoryName}`,
+        category: categoryId, // Send the category ID instead of the name
+        categoryName: categoryName,
+        image: imageToUse, // Use the image URL or placeholder
         inStock: newProduct.status !== 'Out of Stock',
         rating: 0,
         reviewCount: 0
       };
       
+      console.log('Creating product with data:', productData);
+      
       // Call API to create product
       const createdProduct = await productService.createProduct(productData);
+      
+      console.log('Created product response:', createdProduct);
+      
+      // If we have a base64 image that was prepared for upload, upload it now
+      if (hasBase64Image && fileToUpload) {
+        try {
+          console.log(`Uploading image file: ${fileToUpload.name} (${fileToUpload.size} bytes, ${fileToUpload.type})`);
+          
+          // Upload the file to the newly created product
+          const updatedProduct = await productService.uploadProductImage(createdProduct._id, fileToUpload);
+          console.log('Image upload successful:', updatedProduct);
+          
+          // Update the product with the new image URL
+          createdProduct.image = updatedProduct.image;
+        } catch (uploadError) {
+          console.error('Error uploading image:', uploadError);
+          toast({
+            title: "Warning",
+            description: "Product was created but there was an error uploading the image.",
+            variant: "destructive"
+          });
+          // Continue anyway since the product was created
+        }
+      }
       
       // Add new product to local state
       const newProductWithId: Product = {
@@ -156,6 +255,12 @@ const AdminProducts = () => {
         image: createdProduct.image
       };
       
+      // If the image is a relative path, convert it to a full URL for display
+      if (newProductWithId.image && !newProductWithId.image.startsWith('http')) {
+        const apiConfig = await import('@/config/api').then(module => module.default);
+        newProductWithId.image = `${apiConfig.BASE_URL}${newProductWithId.image}`;
+      }
+      
       setProducts([...products, newProductWithId]);
       setIsAddDialogOpen(false);
       setNewProduct({
@@ -166,6 +271,7 @@ const AdminProducts = () => {
         status: 'In Stock',
         image: ''
       });
+      setTempUploadedImage('');
       
       toast({
         title: "Product Added",
@@ -175,7 +281,9 @@ const AdminProducts = () => {
       console.error('Error adding product:', err);
       toast({
         title: "Error",
-        description: "Failed to add product. Please try again.",
+        description: typeof err === 'object' && err !== null && 'message' in err 
+          ? String(err.message) 
+          : "Failed to add product. Please try again.",
         variant: "destructive"
       });
     }
@@ -185,24 +293,124 @@ const AdminProducts = () => {
     if (!currentProduct) return;
     
     try {
+      // Validate inputs
+      if (!currentProduct.name.trim()) {
+        toast({
+          title: "Validation Error",
+          description: "Product name is required",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (!currentProduct.category) {
+        toast({
+          title: "Validation Error",
+          description: "Product category is required",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Prepare the image for the API call
+      let imageToUse = currentProduct.image || '';
+      let hasBase64Image = false;
+      let fileToUpload: File | null = null;
+      
+      // If we have a base64 image, prepare it for upload
+      if (tempEditUploadedImage && tempEditUploadedImage.startsWith('data:')) {
+        hasBase64Image = true;
+        
+        try {
+          // Convert base64 to file for later upload
+          const base64Response = await fetch(tempEditUploadedImage);
+          const blob = await base64Response.blob();
+          
+          // Determine the file extension from the MIME type
+          const mimeType = blob.type || 'image/jpeg';
+          const fileExtension = mimeType.split('/')[1] || 'jpg';
+          
+          // Create a file with a proper name and type
+          fileToUpload = new File(
+            [blob], 
+            `product-image-${currentProduct.id}.${fileExtension}`, 
+            { type: mimeType }
+          );
+          
+          // Keep the existing image URL for now, we'll update after upload
+          imageToUse = currentProduct.image || '';
+        } catch (error) {
+          console.error('Error preparing image file:', error);
+          toast({
+            title: "Error",
+            description: "Failed to process the image. Please try again.",
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+      
       // Prepare data for API
+      const categoryName = typeof currentProduct.category === 'string' 
+        ? currentProduct.category 
+        : currentProduct.category.name;
+      
+      // Find the category ID based on the selected category name
+      const selectedCategory = categories.find(cat => cat.name === categoryName);
+      const categoryId = selectedCategory?._id || '';
+
       const productData = {
         name: currentProduct.name,
         price: currentProduct.price,
-        category: typeof currentProduct.category === 'string' ? currentProduct.category : (currentProduct.category as { name: string }).name,
-        categoryName: typeof currentProduct.category === 'string' ? currentProduct.category : (currentProduct.category as { name: string }).name,
-        image: currentProduct.image,
+        description: `${currentProduct.name} - ${categoryName}`,
+        category: categoryId, // Send the category ID instead of the name
+        image: imageToUse,
         inStock: currentProduct.status !== 'Out of Stock',
-        rating: 0,
-        reviewCount: 0
+        categoryName: categoryName
       };
       
-      // Call API to update product
-      await productService.updateProduct(currentProduct.id, productData);
+      console.log('Updating product with data:', productData);
       
-      // Update product in local state
-      setProducts(products.map(p => p.id === currentProduct.id ? currentProduct : p));
+      // Call API to update product
+      const updatedProduct = await productService.updateProduct(currentProduct.id, productData);
+      
+      console.log('Updated product response:', updatedProduct);
+      
+      // If we have a base64 image that was prepared for upload, upload it now
+      if (hasBase64Image && fileToUpload) {
+        try {
+          console.log(`Uploading image file for product ${currentProduct.id}: ${fileToUpload.name} (${fileToUpload.size} bytes, ${fileToUpload.type})`);
+          
+          // Upload the file to the updated product
+          const productWithImage = await productService.uploadProductImage(currentProduct.id, fileToUpload);
+          console.log('Image upload successful:', productWithImage);
+          
+          // Update the product with the new image URL
+          updatedProduct.image = productWithImage.image;
+        } catch (uploadError) {
+          console.error('Error uploading image:', uploadError);
+          toast({
+            title: "Warning",
+            description: "Product was updated but there was an error uploading the image.",
+            variant: "destructive"
+          });
+          // Continue anyway since the product was updated
+        }
+      }
+      
+      // Convert the image path to a full URL for display using our helper function
+      const displayImageUrl = getFullImageUrl(updatedProduct.image);
+      
+      // Update local state
+      setProducts(products.map(product => 
+        product.id === currentProduct.id ? {
+          ...currentProduct,
+          image: displayImageUrl
+        } : product
+      ));
+      
       setIsEditDialogOpen(false);
+      setTempEditUploadedImage('');
       
       toast({
         title: "Product Updated",
@@ -212,7 +420,9 @@ const AdminProducts = () => {
       console.error('Error updating product:', err);
       toast({
         title: "Error",
-        description: "Failed to update product. Please try again.",
+        description: typeof err === 'object' && err !== null && 'message' in err 
+          ? String(err.message) 
+          : "Failed to update product. Please try again.",
         variant: "destructive"
       });
     }
@@ -282,104 +492,168 @@ const AdminProducts = () => {
                   Add Product
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-3xl">
                 <DialogHeader>
                   <DialogTitle>Add New Product</DialogTitle>
                   <DialogDescription>
                     Enter the details for the new product below.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="name" className="text-right">Name</Label>
-                    <Input 
-                      id="name" 
-                      className="col-span-3" 
-                      value={newProduct.name}
-                      onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
-                    />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="price" className="text-right">Price</Label>
-                    <Input 
-                      id="price" 
-                      type="number" 
-                      className="col-span-3" 
-                      value={newProduct.price}
-                      onChange={(e) => setNewProduct({...newProduct, price: Number(e.target.value)})}
-                    />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="category" className="text-right">Category</Label>
-                    <Select 
-                      name="category"
-                      defaultValue=""
-                      onValueChange={(value) => setNewProduct({...newProduct, category: value})}
-                    >
-                      <SelectTrigger className="col-span-3">
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map(category => (
-                          <SelectItem key={category._id} value={category.name}>
-                            {category.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="stock" className="text-right">Stock</Label>
-                    <Input 
-                      id="stock" 
-                      type="number" 
-                      className="col-span-3" 
-                      value={newProduct.stock}
-                      onChange={(e) => setNewProduct({...newProduct, stock: Number(e.target.value)})}
-                    />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="status" className="text-right">Status</Label>
-                    <Select 
-                      onValueChange={(value) => setNewProduct({...newProduct, status: value})}
-                      defaultValue={newProduct.status}
-                    >
-                      <SelectTrigger className="col-span-3">
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="In Stock">In Stock</SelectItem>
-                        <SelectItem value="Low Stock">Low Stock</SelectItem>
-                        <SelectItem value="Out of Stock">Out of Stock</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="image" className="text-right">Image URL</Label>
-                    <Input 
-                      id="image" 
-                      className="col-span-3" 
-                      value={newProduct.image || ''}
-                      onChange={(e) => setNewProduct({...newProduct, image: e.target.value})}
-                      placeholder="https://example.com/image.jpg"
-                    />
-                  </div>
-                  {newProduct.image && (
-                    <div className="flex justify-center mt-2">
-                      <img 
-                        src={newProduct.image} 
-                        alt="Product preview" 
-                        className="h-40 w-40 object-cover rounded-md border border-gray-200"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.src = 'https://placehold.co/400x400?text=No+Image';
-                        }}
-                      />
+                
+                <Tabs defaultValue="details" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="details">Product Details</TabsTrigger>
+                    <TabsTrigger value="images">Images</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="details" className="space-y-4 py-4">
+                    <div className="grid gap-4">
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="name" className="text-right">Name</Label>
+                        <Input 
+                          id="name" 
+                          className="col-span-3" 
+                          value={newProduct.name}
+                          onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="price" className="text-right">Price</Label>
+                        <Input 
+                          id="price" 
+                          type="number" 
+                          className="col-span-3" 
+                          value={newProduct.price}
+                          onChange={(e) => setNewProduct({...newProduct, price: Number(e.target.value)})}
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="category" className="text-right">Category</Label>
+                        <Select 
+                          name="category"
+                          defaultValue=""
+                          onValueChange={(value) => setNewProduct({...newProduct, category: value})}
+                        >
+                          <SelectTrigger className="col-span-3">
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {categories.map(category => (
+                              <SelectItem key={category._id} value={category.name}>
+                                {category.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="stock" className="text-right">Stock</Label>
+                        <Input 
+                          id="stock" 
+                          type="number" 
+                          className="col-span-3" 
+                          value={newProduct.stock}
+                          onChange={(e) => setNewProduct({...newProduct, stock: Number(e.target.value)})}
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="status" className="text-right">Status</Label>
+                        <Select 
+                          onValueChange={(value) => setNewProduct({...newProduct, status: value})}
+                          defaultValue={newProduct.status}
+                        >
+                          <SelectTrigger className="col-span-3">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="In Stock">In Stock</SelectItem>
+                            <SelectItem value="Low Stock">Low Stock</SelectItem>
+                            <SelectItem value="Out of Stock">Out of Stock</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
+                  </TabsContent>
+                  
+                  <TabsContent value="images">
+                    <div className="space-y-4 py-4">
+                      {tempUploadedImage ? (
+                        <div className="relative">
+                          <img 
+                            src={tempUploadedImage} 
+                            alt="Product preview" 
+                            className="w-full max-h-64 object-contain rounded-md border border-gray-200"
+                          />
+                          <Button 
+                            variant="destructive" 
+                            size="sm" 
+                            className="absolute top-2 right-2" 
+                            onClick={() => setTempUploadedImage('')}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="border-2 border-dashed rounded-md p-6 flex flex-col items-center justify-center">
+                          <ImageIcon className="h-10 w-10 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground mb-4">Upload a product image</p>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = (event) => {
+                                  if (event.target?.result) {
+                                    setTempUploadedImage(event.target.result as string);
+                                  }
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="image" className="text-right">Or Image URL</Label>
+                        <Input 
+                          id="image" 
+                          className="col-span-3" 
+                          value={newProduct.image || ''}
+                          onChange={(e) => {
+                            setNewProduct({...newProduct, image: e.target.value});
+                            // Clear the temp uploaded image if URL is provided
+                            if (e.target.value) setTempUploadedImage('');
+                          }}
+                          placeholder="https://example.com/image.jpg"
+                        />
+                      </div>
+                      
+                      {newProduct.image && !tempUploadedImage && (
+                        <div className="flex justify-center mt-2">
+                          <img 
+                            src={newProduct.image} 
+                            alt="Product preview" 
+                            className="h-40 w-40 object-cover rounded-md border border-gray-200"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src = 'https://placehold.co/400x400?text=No+Image';
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
+                
+                <DialogFooter className="mt-4">
+                  <Button variant="outline" onClick={() => {
+                    setIsAddDialogOpen(false);
+                    setTempUploadedImage('');
+                  }}>Cancel</Button>
                   <Button onClick={handleAddProduct}>Add Product</Button>
                 </DialogFooter>
               </DialogContent>
@@ -417,7 +691,9 @@ const AdminProducts = () => {
                         <TableCell>
                           {typeof product.category === 'string' 
                             ? product.category 
-                            : (product.category as { name: string }).name}
+                            : product.category && typeof product.category === 'object' 
+                              ? ((product.category as { name?: string }).name || 'Uncategorized')
+                              : 'Uncategorized'}
                         </TableCell>
                         <TableCell>{product.stock}</TableCell>
                         <TableCell>
@@ -439,7 +715,7 @@ const AdminProducts = () => {
                                 <Edit className="h-4 w-4" />
                               </Button>
                             </DialogTrigger>
-                            <DialogContent>
+                            <DialogContent className="max-w-3xl">
                               <DialogHeader>
                                 <DialogTitle>Edit Product</DialogTitle>
                                 <DialogDescription>
@@ -447,104 +723,164 @@ const AdminProducts = () => {
                                 </DialogDescription>
                               </DialogHeader>
                               {currentProduct && (
-                                <div className="grid gap-4 py-4">
-                                  <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="edit-name" className="text-right">Name</Label>
-                                    <Input 
-                                      id="edit-name" 
-                                      className="col-span-3" 
-                                      value={currentProduct.name}
-                                      onChange={(e) => setCurrentProduct({...currentProduct, name: e.target.value})}
-                                    />
-                                  </div>
-                                  <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="edit-price" className="text-right">Price</Label>
-                                    <Input 
-                                      id="edit-price" 
-                                      type="number" 
-                                      className="col-span-3" 
-                                      value={currentProduct.price}
-                                      onChange={(e) => setCurrentProduct({...currentProduct, price: Number(e.target.value)})}
-                                    />
-                                  </div>
-                                  <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="edit-category" className="text-right">Category</Label>
-                                    <Select 
-                                      name="category"
-                                      defaultValue={
-                                        typeof currentProduct?.category === 'string' 
-                                          ? currentProduct.category 
-                                          : currentProduct?.category 
-                                            ? (currentProduct.category as { name: string }).name 
-                                            : ''
-                                      }
-                                      onValueChange={(value) => setCurrentProduct({...currentProduct, category: value})}
-                                    >
-                                      <SelectTrigger className="col-span-3">
-                                        <SelectValue placeholder="Select category" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {categories.map(category => (
-                                          <SelectItem key={category._id} value={category.name}>
-                                            {category.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="edit-stock" className="text-right">Stock</Label>
-                                    <Input 
-                                      id="edit-stock" 
-                                      type="number" 
-                                      className="col-span-3" 
-                                      value={currentProduct.stock}
-                                      onChange={(e) => setCurrentProduct({...currentProduct, stock: Number(e.target.value)})}
-                                    />
-                                  </div>
-                                  <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="edit-status" className="text-right">Status</Label>
-                                    <Select 
-                                      onValueChange={(value) => setCurrentProduct({...currentProduct, status: value})}
-                                      defaultValue={currentProduct.status}
-                                    >
-                                      <SelectTrigger className="col-span-3">
-                                        <SelectValue placeholder="Select status" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="In Stock">In Stock</SelectItem>
-                                        <SelectItem value="Low Stock">Low Stock</SelectItem>
-                                        <SelectItem value="Out of Stock">Out of Stock</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="edit-image" className="text-right">Image URL</Label>
-                                    <Input 
-                                      id="edit-image" 
-                                      className="col-span-3" 
-                                      value={currentProduct.image || ''}
-                                      onChange={(e) => setCurrentProduct({...currentProduct, image: e.target.value})}
-                                      placeholder="https://example.com/image.jpg"
-                                    />
-                                  </div>
-                                  {currentProduct.image && (
-                                    <div className="flex justify-center mt-2">
-                                      <img 
-                                        src={currentProduct.image} 
-                                        alt="Product preview" 
-                                        className="h-40 w-40 object-cover rounded-md border border-gray-200"
-                                        onError={(e) => {
-                                          const target = e.target as HTMLImageElement;
-                                          target.src = 'https://placehold.co/400x400?text=No+Image';
+                                <Tabs defaultValue="details" className="w-full">
+                                  <TabsList className="grid w-full grid-cols-2">
+                                    <TabsTrigger value="details">Product Details</TabsTrigger>
+                                    <TabsTrigger value="images">Images</TabsTrigger>
+                                  </TabsList>
+                                  
+                                  <TabsContent value="details" className="space-y-4 py-4">
+                                    <div className="grid gap-4">
+                                      <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="edit-name" className="text-right">Name</Label>
+                                        <Input 
+                                          id="edit-name" 
+                                          className="col-span-3" 
+                                          value={currentProduct.name}
+                                          onChange={(e) => setCurrentProduct({...currentProduct, name: e.target.value})}
+                                        />
+                                      </div>
+                                      <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="edit-price" className="text-right">Price</Label>
+                                        <Input 
+                                          id="edit-price" 
+                                          type="number" 
+                                          className="col-span-3" 
+                                          value={currentProduct.price}
+                                          onChange={(e) => setCurrentProduct({...currentProduct, price: Number(e.target.value)})}
+                                        />
+                                      </div>
+                                      <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="edit-category" className="text-right">Category</Label>
+                                        <Select 
+                                          name="category"
+                                          defaultValue={
+                                            typeof currentProduct?.category === 'string' 
+                                              ? currentProduct.category 
+                                              : currentProduct?.category 
+                                                ? (currentProduct.category as { name: string }).name 
+                                                : ''
+                                          }
+                                          onValueChange={(value) => setCurrentProduct({...currentProduct, category: value})}
+                                        >
+                                          <SelectTrigger className="col-span-3">
+                                            <SelectValue placeholder="Select category" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {categories.map(category => (
+                                              <SelectItem key={category._id} value={category.name}>
+                                                {category.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="edit-stock" className="text-right">Stock</Label>
+                                        <Input 
+                                          id="edit-stock" 
+                                          type="number" 
+                                          className="col-span-3" 
+                                          value={currentProduct.stock}
+                                          onChange={(e) => setCurrentProduct({...currentProduct, stock: Number(e.target.value)})}
+                                        />
+                                      </div>
+                                      <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="edit-status" className="text-right">Status</Label>
+                                        <Select 
+                                          onValueChange={(value) => setCurrentProduct({...currentProduct, status: value})}
+                                          defaultValue={currentProduct.status}
+                                        >
+                                          <SelectTrigger className="col-span-3">
+                                            <SelectValue placeholder="Select status" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="In Stock">In Stock</SelectItem>
+                                            <SelectItem value="Low Stock">Low Stock</SelectItem>
+                                            <SelectItem value="Out of Stock">Out of Stock</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </div>
+                                  </TabsContent>
+                                  
+                                  <TabsContent value="images" className="space-y-4 py-4">
+                                    {tempEditUploadedImage ? (
+                                      <div className="relative">
+                                        <img 
+                                          src={tempEditUploadedImage} 
+                                          alt="Product preview" 
+                                          className="w-full max-h-64 object-contain rounded-md border border-gray-200"
+                                        />
+                                        <Button 
+                                          variant="destructive" 
+                                          size="sm" 
+                                          className="absolute top-2 right-2" 
+                                          onClick={() => setTempEditUploadedImage('')}
+                                        >
+                                          Remove
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <div className="border-2 border-dashed rounded-md p-6 flex flex-col items-center justify-center">
+                                        <ImageIcon className="h-10 w-10 text-muted-foreground mb-2" />
+                                        <p className="text-sm text-muted-foreground mb-4">Upload a product image</p>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                              const reader = new FileReader();
+                                              reader.onload = (event) => {
+                                                if (event.target?.result) {
+                                                  setTempEditUploadedImage(event.target.result as string);
+                                                }
+                                              };
+                                              reader.readAsDataURL(file);
+                                            }
+                                          }}
+                                          className="w-full"
+                                        />
+                                      </div>
+                                    )}
+                                    
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                      <Label htmlFor="edit-image" className="text-right">Or Image URL</Label>
+                                      <Input 
+                                        id="edit-image" 
+                                        className="col-span-3" 
+                                        value={currentProduct.image || ''}
+                                        onChange={(e) => {
+                                          setCurrentProduct({...currentProduct, image: e.target.value});
+                                          // Clear the temp uploaded image if URL is provided
+                                          if (e.target.value) setTempEditUploadedImage('');
                                         }}
+                                        placeholder="https://example.com/image.jpg"
                                       />
                                     </div>
-                                  )}
-                                </div>
+                                    
+                                    {currentProduct.image && !tempEditUploadedImage && (
+                                      <div className="flex justify-center mt-2">
+                                        <img 
+                                          src={currentProduct.image} 
+                                          alt="Product preview" 
+                                          className="h-40 w-40 object-cover rounded-md border border-gray-200"
+                                          onError={(e) => {
+                                            const target = e.target as HTMLImageElement;
+                                            target.src = 'https://placehold.co/400x400?text=No+Image';
+                                          }}
+                                        />
+                                      </div>
+                                    )}
+                                  </TabsContent>
+                                </Tabs>
                               )}
-                              <DialogFooter>
-                                <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
+                              <DialogFooter className="mt-4">
+                                <Button variant="outline" onClick={() => {
+                                  setIsEditDialogOpen(false);
+                                  setTempEditUploadedImage('');
+                                }}>Cancel</Button>
                                 <Button onClick={handleEditProduct}>Save Changes</Button>
                               </DialogFooter>
                             </DialogContent>
@@ -570,7 +906,7 @@ const AdminProducts = () => {
                                 <div className="py-4">
                                   <p><strong>Name:</strong> {currentProduct.name}</p>
                                   <p><strong>Price:</strong> ${currentProduct.price.toFixed(2)}</p>
-                                  <p><strong>Category:</strong> {currentProduct.category}</p>
+                                  <p><strong>Category:</strong> {currentProduct.categoryName}</p>
                                   <p><strong>Status:</strong> {currentProduct.status}</p>
                                 </div>
                               )}

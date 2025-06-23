@@ -150,6 +150,7 @@ class CategoryService {
     formData.append('image', imageFile);
     
     try {
+      console.log(`Uploading image for category ${id}`, { fileName: imageFile.name, fileType: imageFile.type, fileSize: imageFile.size });
       return await api.uploadFile<Category>(`/api/categories/${id}/image`, formData);
     } catch (error) {
       console.error('Failed to upload category image via API:', error);

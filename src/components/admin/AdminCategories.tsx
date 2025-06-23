@@ -22,9 +22,9 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Textarea } from '@/components/ui/textarea';
-import categoryService, { Category as ApiCategory } from '@/services/categoryService';
+import categoryService from '@/services/categoryService';
 import mockData from '@/services/mockData';
+import { CategoryImageUpload } from '@/components/admin/forms/CategoryImageUpload';
 
 // Interface for our local category data structure
 interface Category {
@@ -32,7 +32,6 @@ interface Category {
   name: string;
   slug: string;
   products: number;
-  description: string;
   image?: string;
 }
 
@@ -48,9 +47,9 @@ const AdminCategories = () => {
   const [newCategory, setNewCategory] = useState<Omit<Category, 'id' | 'products'>>({
     name: '',
     slug: '',
-    description: '',
     image: ''
   });
+  const [tempUploadedImage, setTempUploadedImage] = useState<string>('');
 
   const { toast } = useToast();
 
@@ -78,7 +77,6 @@ const AdminCategories = () => {
           name: cat.name,
           slug: cat.slug,
           products: cat.itemCount || 0,
-          description: cat.image || 'No description available', // API doesn't have description, using image field as placeholder
           image: cat.image || ''
         }));
         
@@ -93,7 +91,6 @@ const AdminCategories = () => {
           name: cat.name,
           slug: cat.slug,
           products: cat.itemCount || 0,
-          description: cat.image || 'No description available',
           image: cat.image || ''
         }));
         
@@ -107,8 +104,7 @@ const AdminCategories = () => {
   }, []);
 
   const filteredCategories = categories.filter(category => 
-    category.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    category.description.toLowerCase().includes(searchQuery.toLowerCase())
+    category.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const generateSlug = (name: string) => {
@@ -146,11 +142,59 @@ const AdminCategories = () => {
         return;
       }
 
+      // Check if we have an image
+      if (!tempUploadedImage && !newCategory.image) {
+        toast({
+          title: "Validation Error",
+          description: "Category image is required",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Prepare the image for the API call
+      let imageToUse = newCategory.image || '';
+      let hasBase64Image = false;
+      let fileToUpload: File | null = null;
+      
+      // If we have a base64 image, prepare it for upload
+      if (tempUploadedImage && tempUploadedImage.startsWith('data:')) {
+        hasBase64Image = true;
+        
+        try {
+          // Convert base64 to file for later upload
+          const base64Response = await fetch(tempUploadedImage);
+          const blob = await base64Response.blob();
+          
+          // Determine the file extension from the MIME type
+          const mimeType = blob.type || 'image/jpeg';
+          const fileExtension = mimeType.split('/')[1] || 'jpg';
+          
+          // Create a file with a proper name and type
+          fileToUpload = new File(
+            [blob], 
+            `category-image.${fileExtension}`, 
+            { type: mimeType }
+          );
+          
+          // Use a placeholder URL for now
+          imageToUse = 'https://placehold.co/600x400?text=' + encodeURIComponent(newCategory.name);
+        } catch (error) {
+          console.error('Error preparing image file:', error);
+          toast({
+            title: "Error",
+            description: "Failed to process the image. Please try again.",
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+      
       // Prepare data for API
       const categoryData = {
         name: newCategory.name,
         slug: newCategory.slug,
-        image: newCategory.image || newCategory.description || 'https://placehold.co/600x400?text=' + encodeURIComponent(newCategory.name),
+        image: imageToUse, // Use the image URL or placeholder
         itemCount: 0
       };
       
@@ -161,24 +205,51 @@ const AdminCategories = () => {
       
       console.log('Created category response:', createdCategory);
       
+      // If we have a base64 image that was prepared for upload, upload it now
+      if (hasBase64Image && fileToUpload) {
+        try {
+          console.log(`Uploading image file: ${fileToUpload.name} (${fileToUpload.size} bytes, ${fileToUpload.type})`);
+          
+          // Upload the file to the newly created category
+          const updatedCategory = await categoryService.uploadCategoryImage(createdCategory._id, fileToUpload);
+          console.log('Image upload successful:', updatedCategory);
+          
+          // Update the category with the new image URL
+          createdCategory.image = updatedCategory.image;
+        } catch (uploadError) {
+          console.error('Error uploading image:', uploadError);
+          toast({
+            title: "Warning",
+            description: "Category was created but there was an error uploading the image.",
+            variant: "destructive"
+          });
+          // Continue anyway since the category was created
+        }
+      }
+      
       // Add new category to local state
       const newCategoryWithId: Category = {
         id: createdCategory._id,
         name: createdCategory.name,
         slug: createdCategory.slug,
         products: createdCategory.itemCount || 0,
-        description: createdCategory.image || '',
         image: createdCategory.image || ''
       };
+      
+      // If the image is a relative path, convert it to a full URL for display
+      if (newCategoryWithId.image && !newCategoryWithId.image.startsWith('http')) {
+        const apiConfig = await import('@/config/api').then(module => module.default);
+        newCategoryWithId.image = `${apiConfig.BASE_URL}${newCategoryWithId.image}`;
+      }
       
       setCategories([...categories, newCategoryWithId]);
       setIsAddDialogOpen(false);
       setNewCategory({
         name: '',
         slug: '',
-        description: '',
         image: ''
       });
+      setTempUploadedImage('');
       
       toast({
         title: "Category Added",
@@ -188,7 +259,9 @@ const AdminCategories = () => {
       console.error('Error adding category:', err);
       toast({
         title: "Error",
-        description: "Failed to add category. Please try again.",
+        description: typeof err === 'object' && err !== null && 'message' in err 
+          ? String(err.message) 
+          : "Failed to add category. Please try again.",
         variant: "destructive"
       });
     }
@@ -212,7 +285,7 @@ const AdminCategories = () => {
       const categoryData = {
         name: currentCategory.name,
         slug: currentCategory.slug || currentCategory.name.toLowerCase().replace(/\s+/g, '-'),
-        image: currentCategory.image || currentCategory.description || 'https://placehold.co/600x400?text=' + encodeURIComponent(currentCategory.name)
+        image: currentCategory.image || 'https://placehold.co/600x400?text=' + encodeURIComponent(currentCategory.name)
       };
       
       console.log('Updating category with ID:', currentCategory.id, 'Data:', categoryData);
@@ -231,7 +304,6 @@ const AdminCategories = () => {
         name: cat.name,
         slug: cat.slug,
         products: cat.itemCount || 0,
-        description: cat.image || 'No description available',
         image: cat.image || ''
       }));
       
@@ -356,36 +428,19 @@ const AdminCategories = () => {
                     />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="image" className="text-right">Image URL</Label>
-                    <Input 
-                      id="image" 
-                      className="col-span-3" 
-                      value={newCategory.image}
-                      onChange={(e) => setNewCategory({...newCategory, image: e.target.value})}
-                      placeholder="https://example.com/image.jpg"
-                    />
-                  </div>
-                  {newCategory.image && (
-                    <div className="flex justify-center mt-2">
-                      <img 
-                        src={newCategory.image} 
-                        alt="Category preview" 
-                        className="h-40 w-40 object-cover rounded-md border border-gray-200"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.src = 'https://placehold.co/400x400?text=No+Image';
+                    <Label htmlFor="image" className="text-right">Category Image</Label>
+                    <div className="col-span-3">
+                      <CategoryImageUpload
+                        initialImage={tempUploadedImage || newCategory.image}
+                        onSave={(imageUrl) => {
+                          if (imageUrl.startsWith('data:')) {
+                            setTempUploadedImage(imageUrl);
+                          } else {
+                            setNewCategory({...newCategory, image: imageUrl});
+                          }
                         }}
                       />
                     </div>
-                  )}
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="description" className="text-right">Description</Label>
-                    <Textarea 
-                      id="description" 
-                      className="col-span-3" 
-                      value={newCategory.description}
-                      onChange={(e) => setNewCategory({...newCategory, description: e.target.value})}
-                    />
                   </div>
                 </div>
                 <DialogFooter>
@@ -441,9 +496,9 @@ const AdminCategories = () => {
                                 <span className="text-xs text-gray-500">No Image</span>
                               </div>
                             )}
-                            <div className="line-clamp-2 max-w-[200px]">
+                            {/* <div className="line-clamp-2 max-w-[200px]">
                               {category.description}
-                            </div>
+                            </div> */}
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
@@ -463,7 +518,7 @@ const AdminCategories = () => {
                                   Make changes to the category details below.
                                 </DialogDescription>
                               </DialogHeader>
-                              {currentCategory && (
+                              {currentCategory ? (
                                 <div className="grid gap-4 py-4">
                                   <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="edit-name" className="text-right">Name</Label>
@@ -484,39 +539,31 @@ const AdminCategories = () => {
                                     />
                                   </div>
                                   <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="edit-image" className="text-right">Image URL</Label>
-                                    <Input 
-                                      id="edit-image" 
-                                      className="col-span-3" 
-                                      value={currentCategory.image}
-                                      onChange={(e) => setCurrentCategory({...currentCategory, image: e.target.value})}
-                                      placeholder="https://example.com/image.jpg"
-                                    />
-                                  </div>
-                                  {currentCategory.image && (
-                                    <div className="flex justify-center mt-2">
-                                      <img 
-                                        src={currentCategory.image} 
-                                        alt="Category preview" 
-                                        className="h-40 w-40 object-cover rounded-md border border-gray-200"
-                                        onError={(e) => {
-                                          const target = e.target as HTMLImageElement;
-                                          target.src = 'https://placehold.co/400x400?text=No+Image';
+                                    <Label htmlFor="edit-image" className="text-right">Category Image</Label>
+                                    <div className="col-span-3">
+                                      <CategoryImageUpload
+                                        initialImage={currentCategory.image}
+                                        categoryId={currentCategory.id}
+                                        onSave={(imageUrl) => {
+                                          setCurrentCategory({...currentCategory, image: imageUrl});
+                                        }}
+                                        onUploadComplete={() => {
+                                          // Refresh the category data after upload
+                                          categoryService.getCategories().then(apiCategories => {
+                                            const updatedCategory = apiCategories.find(cat => cat._id === currentCategory.id);
+                                            if (updatedCategory) {
+                                              setCurrentCategory({
+                                                ...currentCategory,
+                                                image: updatedCategory.image
+                                              });
+                                            }
+                                          }).catch(console.error);
                                         }}
                                       />
                                     </div>
-                                  )}
-                                  <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="edit-description" className="text-right">Description</Label>
-                                    <Textarea 
-                                      id="edit-description" 
-                                      className="col-span-3" 
-                                      value={currentCategory.description}
-                                      onChange={(e) => setCurrentCategory({...currentCategory, description: e.target.value})}
-                                    />
                                   </div>
                                 </div>
-                              )}
+                              ) : null}
                               <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
                                 <Button onClick={handleUpdateCategory}>Save Changes</Button>
@@ -540,13 +587,13 @@ const AdminCategories = () => {
                                   Are you sure you want to delete this category? This action cannot be undone.
                                 </DialogDescription>
                               </DialogHeader>
-                              {currentCategory && (
+                              {currentCategory ? (
                                 <div className="py-4">
                                   <p><strong>Name:</strong> {currentCategory.name}</p>
                                   <p><strong>Slug:</strong> {currentCategory.slug}</p>
                                   <p><strong>Products:</strong> {currentCategory.products}</p>
                                 </div>
-                              )}
+                              ) : null}
                               <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Cancel</Button>
                                 <Button variant="destructive" onClick={handleDeleteCategory}>Delete Category</Button>
