@@ -15,6 +15,14 @@ export const getFullImageUrl = (imagePath: string): string => {
     return imagePath;
   }
   
+  // Check if the path contains 'uploads/' which indicates it's a media file
+  // These should always come from the backend API, not the frontend
+  if (imagePath.includes('uploads/')) {
+    // Remove any leading slash to normalize the path
+    const normalizedPath = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
+    return `${API_CONFIG.BASE_URL}${normalizedPath}`;
+  }
+  
   // If it's a relative path starting with /, append it to the API base URL
   if (imagePath.startsWith('/')) {
     return `${API_CONFIG.BASE_URL}${imagePath}`;
