@@ -27,7 +27,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import userService, { User as ApiUser } from '@/services/userService';
 import orderService from '@/services/orderService';
-import mockData from '@/services/mockData';
 
 interface Customer {
   id: string;
@@ -78,8 +77,16 @@ const AdminCustomers = () => {
         const users = await userService.getAllUsers();
         console.log('API Users:', users);
         
+        if (!users || users.length === 0) {
+          console.warn('No users returned from API');
+          setError('No customer data available. The API may be unavailable or you may not have admin permissions.');
+          setCustomers([]);
+          setLoading(false);
+          return;
+        }
+        
         // Fetch orders to calculate spent amount and last order date
-        let ordersByUser: Record<string, { count: number; total: number; lastDate: string }> = {};
+        const ordersByUser: Record<string, { count: number; total: number; lastDate: string }> = {};
         try {
           const orders = await orderService.getOrders();
           
@@ -136,62 +143,15 @@ const AdminCustomers = () => {
             };
           });
         
+        if (transformedCustomers.length === 0) {
+          setError('No customers found. There may be only admin accounts in the system.');
+        }
+        
         setCustomers(transformedCustomers);
       } catch (err) {
         console.error('Error fetching customers:', err);
-        setError('Failed to load customers. Using mock data for testing.');
-        
-        // Use mock data for testing
-        const mockUsers = mockData.getUsers();
-        const mockOrders = mockData.getOrders();
-        
-        // Create a map of orders by user
-        const ordersByUser: Record<string, { count: number; total: number; lastDate: string }> = {};
-        mockOrders.forEach(order => {
-          const userId = order.user;
-          if (!ordersByUser[userId]) {
-            ordersByUser[userId] = { count: 0, total: 0, lastDate: '' };
-          }
-          
-          ordersByUser[userId].count += 1;
-          ordersByUser[userId].total += order.totalPrice;
-          
-          // Update last order date if this order is more recent
-          if (!ordersByUser[userId].lastDate || new Date(order.createdAt) > new Date(ordersByUser[userId].lastDate)) {
-            ordersByUser[userId].lastDate = order.createdAt;
-          }
-        });
-        
-        // Transform mock users to our local customer format
-        const mockCustomers = mockUsers
-          .filter(user => user.role === 'user')
-          .map(user => {
-            const userOrders = ordersByUser[user._id] || { count: 0, total: 0, lastDate: '' };
-            const fullName = `${user.firstName} ${user.lastName}`;
-            
-            // Determine status based on order history
-            let status = 'New';
-            if (userOrders.count > 0) {
-              const lastOrderDate = userOrders.lastDate ? new Date(userOrders.lastDate) : null;
-              const threeMonthsAgo = new Date();
-              threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-              
-              status = lastOrderDate && lastOrderDate > threeMonthsAgo ? 'Active' : 'Inactive';
-            }
-            
-            return {
-              id: user._id,
-              name: fullName,
-              email: user.email,
-              orders: userOrders.count,
-              spent: userOrders.total,
-              status,
-              lastOrder: userOrders.lastDate ? new Date(userOrders.lastDate).toISOString().split('T')[0] : '',
-              image: ''
-            };
-          });
-        
-        setCustomers(mockCustomers);
+        setError('Failed to load customers. The API endpoint may be unavailable or you may not have admin permissions.');
+        setCustomers([]);
       } finally {
         setLoading(false);
       }
@@ -260,7 +220,81 @@ const AdminCustomers = () => {
           <Button 
             variant="outline" 
             className="mt-4"
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              setLoading(true);
+              setError(null);
+              // Retry fetching data
+              const fetchData = async () => {
+                try {
+                  const users = await userService.getAllUsers();
+                  const orders = await orderService.getOrders();
+                  
+                  // Process the data (same logic as in useEffect)
+                  const ordersByUser: Record<string, { count: number; total: number; lastDate: string }> = {};
+                  
+                  orders.forEach(order => {
+                    const userId = order.user;
+                    if (!ordersByUser[userId]) {
+                      ordersByUser[userId] = { count: 0, total: 0, lastDate: '' };
+                    }
+                    
+                    ordersByUser[userId].count += 1;
+                    ordersByUser[userId].total += order.totalPrice;
+                    
+                    const orderDate = new Date(order.createdAt);
+                    const currentLastDate = ordersByUser[userId].lastDate ? 
+                      new Date(ordersByUser[userId].lastDate) : new Date(0);
+                      
+                    if (orderDate > currentLastDate) {
+                      ordersByUser[userId].lastDate = order.createdAt;
+                    }
+                  });
+                  
+                  const transformedCustomers = users
+                    .filter(user => user.role === 'user')
+                    .map(user => {
+                      const userOrders = ordersByUser[user._id] || { count: 0, total: 0, lastDate: '' };
+                      const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
+                      
+                      let status = 'New';
+                      if (userOrders.count > 0) {
+                        const lastOrderDate = userOrders.lastDate ? new Date(userOrders.lastDate) : null;
+                        const threeMonthsAgo = new Date();
+                        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+                        
+                        status = lastOrderDate && lastOrderDate > threeMonthsAgo ? 'Active' : 'Inactive';
+                      }
+                      
+                      return {
+                        id: user._id,
+                        name: fullName,
+                        email: user.email,
+                        orders: userOrders.count,
+                        spent: userOrders.total,
+                        status,
+                        lastOrder: userOrders.lastDate ? new Date(userOrders.lastDate).toISOString().split('T')[0] : '',
+                        image: ''
+                      };
+                    });
+                  
+                  if (transformedCustomers.length === 0) {
+                    setError('No customers found. There may be only admin accounts in the system.');
+                  } else {
+                    setError(null);
+                  }
+                  
+                  setCustomers(transformedCustomers);
+                } catch (err) {
+                  console.error('Error retrying data fetch:', err);
+                  setError('Failed to load customers. The API endpoint may be unavailable or you may not have admin permissions.');
+                  setCustomers([]);
+                } finally {
+                  setLoading(false);
+                }
+              };
+              
+              fetchData();
+            }}
           >
             Retry
           </Button>

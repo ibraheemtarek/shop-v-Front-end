@@ -162,7 +162,7 @@ class UserService {
    * Get all users (admin only)
    */
   async getAllUsers(): Promise<User[]> {
-    return api.get<User[]>('/api/users');
+    return api.get<User[]>('/api/users/all');
   }
 
   /**

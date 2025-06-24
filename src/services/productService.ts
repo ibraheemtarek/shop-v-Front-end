@@ -79,18 +79,36 @@ class ProductService {
     page?: number;
     limit?: number;
   }): Promise<ProductsResponse> {
-    const response = await api.get<ProductsResponse>('/api/products', params as Record<string, string>);
-    
-    // Process image URLs in the response
-    if (response && response.products) {
-      response.products = response.products.map(product => ({
-        ...product,
-        image: getFullImageUrl(product.image),
-        images: product.images ? product.images.map(getFullImageUrl) : undefined
-      }));
+    try {
+      // Convert params to proper query string format
+      const queryParams: Record<string, string> = {};
+      
+      if (params) {
+        // Only include defined parameters
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            queryParams[key] = String(value);
+          }
+        });
+      }
+      
+      const response = await api.get<ProductsResponse>('/api/products', queryParams);
+      
+      // Process image URLs in the response
+      if (response && response.products) {
+        response.products = response.products.map(product => ({
+          ...product,
+          image: getFullImageUrl(product.image),
+          images: product.images ? product.images.map(getFullImageUrl) : undefined
+        }));
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      // Return empty product response
+      return { products: [], page: 1, pages: 0, total: 0 };
     }
-    
-    return response;
   }
 
   /**
