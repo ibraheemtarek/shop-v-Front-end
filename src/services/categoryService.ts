@@ -1,4 +1,5 @@
 import api from './api';
+import { getFullImageUrl } from './productService';
 
 export interface Category {
   _id: string;
@@ -21,6 +22,13 @@ class CategoryService {
     try {
       // Get categories from API
       const categories = await api.get<Category[]>('/api/categories');
+      
+      // Process image URLs
+      categories.forEach(category => {
+        if (category.image) {
+          category.image = getFullImageUrl(category.image);
+        }
+      });
       
       // Get products to calculate accurate item counts - use a smaller limit
       try {
@@ -76,6 +84,11 @@ class CategoryService {
       // Get category from API
       const category = await api.get<Category>(`/api/categories/${slug}`);
       
+      // Process image URL
+      if (category.image) {
+        category.image = getFullImageUrl(category.image);
+      }
+      
       // Get products to calculate accurate item count - use a smaller limit
       try {
         // Use a smaller limit that the API can handle (50 is usually safe)
@@ -121,17 +134,60 @@ class CategoryService {
   }
 
   /**
+   * Get category by id
+   */
+  async getCategoryById(id: string): Promise<Category> {
+    try {
+      const category = await api.get<Category>(`/api/categories/id/${id}`);
+      
+      // Process image URL
+      if (category.image) {
+        category.image = getFullImageUrl(category.image);
+      }
+      
+      return category;
+    } catch (error) {
+      console.error(`Failed to fetch category ${id} from API:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Create a new category (admin only)
    */
   async createCategory(categoryData: Omit<Category, '_id' | 'createdAt' | 'updatedAt'>): Promise<Category> {
-    return api.post<Category>('/api/categories', categoryData);
+    try {
+      const category = await api.post<Category>('/api/categories', categoryData);
+      
+      // Process image URL
+      if (category.image) {
+        category.image = getFullImageUrl(category.image);
+      }
+      
+      return category;
+    } catch (error) {
+      console.error('Failed to create category via API:', error);
+      throw error;
+    }
   }
 
   /**
    * Update a category (admin only)
    */
   async updateCategory(id: string, categoryData: Partial<Category>): Promise<Category> {
-    return api.put<Category>(`/api/categories/${id}`, categoryData);
+    try {
+      const category = await api.put<Category>(`/api/categories/${id}`, categoryData);
+      
+      // Process image URL
+      if (category.image) {
+        category.image = getFullImageUrl(category.image);
+      }
+      
+      return category;
+    } catch (error) {
+      console.error('Failed to update category via API:', error);
+      throw error;
+    }
   }
 
   /**
@@ -150,7 +206,15 @@ class CategoryService {
     formData.append('image', imageFile);
     
     try {
-      return await api.uploadFile<Category>(`/api/categories/${id}/image`, formData);
+      console.log(`Uploading image for category ${id}`, { fileName: imageFile.name, fileType: imageFile.type, fileSize: imageFile.size });
+      const category = await api.uploadFile<Category>(`/api/categories/${id}/image`, formData);
+      
+      // Process image URL
+      if (category.image) {
+        category.image = getFullImageUrl(category.image);
+      }
+      
+      return category;
     } catch (error) {
       console.error('Failed to upload category image via API:', error);
       throw new Error('Failed to upload category image');
@@ -162,7 +226,14 @@ class CategoryService {
    */
   async deleteCategoryImage(id: string): Promise<Category> {
     try {
-      return await api.delete<Category>(`/api/categories/${id}/image`);
+      const category = await api.delete<Category>(`/api/categories/${id}/image`);
+      
+      // Process image URL (should be empty after deletion, but process anyway)
+      if (category.image) {
+        category.image = getFullImageUrl(category.image);
+      }
+      
+      return category;
     } catch (error) {
       console.error('Failed to delete category image via API:', error);
       throw new Error('Failed to delete category image');

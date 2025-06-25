@@ -1,5 +1,36 @@
 import api from './api';
 import categoryService from './categoryService';
+import API_CONFIG from '../config/api';
+
+/**
+ * Helper function to convert relative image paths to full URLs
+ * @param imagePath - Relative or full image path
+ * @returns Full image URL
+ */
+export const getFullImageUrl = (imagePath: string): string => {
+  if (!imagePath) return '';
+  
+  // If the image path is already a full URL, return it as is
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    return imagePath;
+  }
+  
+  // Check if the path contains 'uploads/' which indicates it's a media file
+  // These should always come from the backend API, not the frontend
+  if (imagePath.includes('uploads/')) {
+    // Remove any leading slash to normalize the path
+    const normalizedPath = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
+    return `${API_CONFIG.BASE_URL}${normalizedPath}`;
+  }
+  
+  // If it's a relative path starting with /, append it to the API base URL
+  if (imagePath.startsWith('/')) {
+    return `${API_CONFIG.BASE_URL}${imagePath}`;
+  }
+  
+  // Otherwise, assume it's a relative path and add a leading slash
+  return `${API_CONFIG.BASE_URL}/${imagePath}`;
+};
 
 export interface Product {
   _id: string;
@@ -48,35 +79,95 @@ class ProductService {
     page?: number;
     limit?: number;
   }): Promise<ProductsResponse> {
-    return api.get<ProductsResponse>('/api/products', params as Record<string, string>);
+    try {
+      // Convert params to proper query string format
+      const queryParams: Record<string, string> = {};
+      
+      if (params) {
+        // Only include defined parameters
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            queryParams[key] = String(value);
+          }
+        });
+      }
+      
+      const response = await api.get<ProductsResponse>('/api/products', queryParams);
+      
+      // Process image URLs in the response
+      if (response && response.products) {
+        response.products = response.products.map(product => ({
+          ...product,
+          image: getFullImageUrl(product.image),
+          images: product.images ? product.images.map(getFullImageUrl) : undefined
+        }));
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      // Return empty product response
+      return { products: [], page: 1, pages: 0, total: 0 };
+    }
   }
 
   /**
    * Get product by ID
    */
   async getProductById(id: string): Promise<Product> {
-    return api.get<Product>(`/api/products/${id}`);
+    const product = await api.get<Product>(`/api/products/${id}`);
+    
+    // Process image URLs
+    if (product) {
+      product.image = getFullImageUrl(product.image);
+      if (product.images) {
+        product.images = product.images.map(getFullImageUrl);
+      }
+    }
+    
+    return product;
   }
 
   /**
    * Get featured products
    */
   async getFeaturedProducts(): Promise<Product[]> {
-    return api.get<Product[]>('/api/products/featured');
+    const products = await api.get<Product[]>('/api/products/featured');
+    
+    // Process image URLs
+    return products.map(product => ({
+      ...product,
+      image: getFullImageUrl(product.image),
+      images: product.images ? product.images.map(getFullImageUrl) : undefined
+    }));
   }
 
   /**
    * Get bestseller products
    */
   async getBestsellerProducts(): Promise<Product[]> {
-    return api.get<Product[]>('/api/products/bestsellers');
+    const products = await api.get<Product[]>('/api/products/bestsellers');
+    
+    // Process image URLs
+    return products.map(product => ({
+      ...product,
+      image: getFullImageUrl(product.image),
+      images: product.images ? product.images.map(getFullImageUrl) : undefined
+    }));
   }
 
   /**
    * Get sale products
    */
   async getSaleProducts(): Promise<Product[]> {
-    return api.get<Product[]>('/api/products/sale');
+    const products = await api.get<Product[]>('/api/products/sale');
+    
+    // Process image URLs
+    return products.map(product => ({
+      ...product,
+      image: getFullImageUrl(product.image),
+      images: product.images ? product.images.map(getFullImageUrl) : undefined
+    }));
   }
 
   /**
@@ -85,6 +176,14 @@ class ProductService {
    */
   async createProduct(productData: Omit<Product, '_id' | 'createdAt' | 'updatedAt'>): Promise<Product> {
     const newProduct = await api.post<Product>('/api/products', productData);
+    
+    // Process image URLs in the response
+    if (newProduct) {
+      newProduct.image = getFullImageUrl(newProduct.image);
+      if (newProduct.images) {
+        newProduct.images = newProduct.images.map(getFullImageUrl);
+      }
+    }
     
     // Update the category item count if a category is specified
     if (newProduct.category) {
@@ -108,6 +207,14 @@ class ProductService {
     const shouldRefreshCategories = 'category' in productData;
     
     const updatedProduct = await api.put<Product>(`/api/products/${id}`, productData);
+    
+    // Process image URLs in the response
+    if (updatedProduct) {
+      updatedProduct.image = getFullImageUrl(updatedProduct.image);
+      if (updatedProduct.images) {
+        updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+      }
+    }
     
     // Update category item counts if needed
     if (shouldRefreshCategories) {
@@ -153,13 +260,23 @@ class ProductService {
   }
 
   /**
-   * Upload a single product image (admin only)
+   * Upload a product image
    */
-  async uploadProductImage(id: string, imageFile: File): Promise<Product> {
+  async uploadProductImage(productId: string, imageFile: File): Promise<Product> {
     const formData = new FormData();
     formData.append('image', imageFile);
     
-    return api.uploadFile<Product>(`/api/products/${id}/image`, formData);
+    const updatedProduct = await api.uploadFile<Product>(`/api/products/${productId}/image`, formData);
+    
+    // Process image URLs in the response
+    if (updatedProduct) {
+      updatedProduct.image = getFullImageUrl(updatedProduct.image);
+      if (updatedProduct.images) {
+        updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+      }
+    }
+    
+    return updatedProduct;
   }
 
   /**
@@ -172,14 +289,34 @@ class ProductService {
       formData.append('images', file);
     });
     
-    return api.uploadFile<Product>(`/api/products/${id}/images`, formData);
+    const updatedProduct = await api.uploadFile<Product>(`/api/products/${id}/images`, formData);
+    
+    // Process image URLs in the response
+    if (updatedProduct) {
+      updatedProduct.image = getFullImageUrl(updatedProduct.image);
+      if (updatedProduct.images) {
+        updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+      }
+    }
+    
+    return updatedProduct;
   }
 
   /**
    * Delete a product image (admin only)
    */
   async deleteProductImage(productId: string, imageIndex: number): Promise<Product> {
-    return api.delete<Product>(`/api/products/${productId}/image/${imageIndex}`);
+    const updatedProduct = await api.delete<Product>(`/api/products/${productId}/image/${imageIndex}`);
+    
+    // Process image URLs in the response
+    if (updatedProduct) {
+      updatedProduct.image = getFullImageUrl(updatedProduct.image);
+      if (updatedProduct.images) {
+        updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+      }
+    }
+    
+    return updatedProduct;
   }
 }
 

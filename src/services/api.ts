@@ -508,6 +508,22 @@ class ApiService {
     // Use the configured API base URL
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
     console.log('Making file upload request to:', url);
+    
+    // Log the formData contents for debugging (without reading the file contents)
+    try {
+      console.log('FormData keys:');
+      for (const key of formData.keys()) {
+        const value = formData.get(key);
+        if (value instanceof File) {
+          console.log(`- ${key}: File (name: ${value.name}, type: ${value.type}, size: ${value.size} bytes)`);
+        } else {
+          console.log(`- ${key}: ${String(value).substring(0, 100)}${String(value).length > 100 ? '...' : ''}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error logging FormData:', error);
+    }
+    
     const token = localStorage.getItem('token');
     const headers: HeadersInit = {};
     
@@ -524,42 +540,83 @@ class ApiService {
       console.log('Added cross-origin headers for production environment');
     }
     
-    // CSRF protection has been disabled for this project
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: formData,
-      credentials: 'include', // Include cookies for CSRF
-    });
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+        credentials: 'include',
+      });
 
-    if (!response.ok) {
-      // If unauthorized and we have a token, try to refresh it
-      if (response.status === 401 && localStorage.getItem('token') && 
-          !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/refresh')) {
-        // For file uploads, we need to recreate the formData - can't be cloned
-        // Create a minimal request object since we can't clone FormData
-        const minimalRequest: ApiRequest = {
-          method: 'POST',
-          url: `${API_CONFIG.BASE_URL}${endpoint}`,
-          headers: {}
-        };
+      console.log(`Upload response status: ${response.status}`);
+      
+      // Log response headers for debugging
+      const responseHeaders: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      console.log('Response headers:', responseHeaders);
+
+      if (!response.ok) {
+        // If unauthorized and we have a token, try to refresh it
+        if (response.status === 401 && localStorage.getItem('token') && 
+            !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/refresh')) {
+          console.log('Unauthorized response, attempting token refresh...');
+          // For file uploads, we need to recreate the formData - can't be cloned
+          // Create a minimal request object since we can't clone FormData
+          const minimalRequest: ApiRequest = {
+            method: 'POST',
+            url: `${API_CONFIG.BASE_URL}${endpoint}`,
+            headers: {}
+          };
+          
+          await this.handleTokenRefresh(minimalRequest);
+          
+          // Simply retry the uploadFile call after token refresh
+          return this.uploadFile<T>(endpoint, formData);
+        }
+
+        // Try to get detailed error information
+        let errorMessage = `API error: ${response.status}`;
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const errorData = await response.json();
+            console.error('API error details:', errorData);
+            errorMessage = errorData.message || errorMessage;
+          } else {
+            const errorText = await response.text();
+            console.error('API error text:', errorText);
+            errorMessage = errorText || errorMessage;
+          }
+        } catch (parseError) {
+          console.error('Error parsing error response:', parseError);
+        }
         
-        await this.handleTokenRefresh(minimalRequest);
-        
-        // Simply retry the uploadFile call after token refresh
-        return this.uploadFile<T>(endpoint, formData);
+        throw new Error(errorMessage);
       }
-
+      
+      // Try to parse the response as JSON
       try {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `API error: ${response.status}`);
-      } catch (e) {
-        throw new Error(`API error: ${response.status}`);
+        const data = await response.json();
+        console.log('Upload successful, response data:', data);
+        return data;
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse as JSON, try to get the text
+        try {
+          const text = await response.text();
+          console.log('Response text:', text);
+          throw new Error('Invalid JSON response from server');
+        } catch (textError) {
+          console.error('Error getting response text:', textError);
+          throw new Error('Could not parse server response');
+        }
       }
+    } catch (error) {
+      console.error('File upload request failed:', error);
+      throw error;
     }
-    
-    return response.json();
   }
 }
 

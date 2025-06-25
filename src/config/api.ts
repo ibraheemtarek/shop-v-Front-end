@@ -1,11 +1,10 @@
 // API configuration
 
-// Use local proxy for API requests to avoid CORS and SameSite cookie issues
+// Configure API base URL based on environment
 const getApiBaseUrl = () => {
-  // In development, use the local proxy which is configured in vite.config.ts
-  // This prevents SameSite cookie issues because requests come from the same origin
+  // In development, use localhost
   if (import.meta.env.DEV) {
-    return '';
+    return 'http://localhost:5001';
   }
   
   // In production, point directly to the backend API
