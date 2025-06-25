@@ -28,23 +28,16 @@ const LoginForm = ({ onSuccess }: LoginFormProps) => {
       }
       
       // Use the login function from AuthContext instead of directly calling userService
-      await login(email, password);
-      
-      // Get user role from localStorage
-      const userRole = localStorage.getItem('userRole');
-      const isAdmin = userRole === 'admin';
+      const userData = await login(email, password);
       
       toast({
         title: "Login successful",
-        description: `Welcome back!`
+        description: `Welcome back, ${userData?.firstName || ''}!`
       });
       
-      // If admin, redirect to admin, else use the default onSuccess
-      if (isAdmin) {
-        window.location.href = '/admin';
-      } else {
-        onSuccess();
-      }
+      // Always use the onSuccess callback for regular user login
+      // Admin login is handled separately in AdminLogin component
+      onSuccess();
     } catch (error) {
       console.error('Login failed:', error);
       toast({

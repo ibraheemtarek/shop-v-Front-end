@@ -199,6 +199,61 @@ class ProductService {
   }
 
   /**
+   * Get products (admin only)
+   */
+  async getAdminProducts(params: {
+    category?: string;
+    search?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    isNew?: boolean;
+    isOnSale?: boolean;
+    sort?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<ProductsResponse> {
+    try {
+      // Use admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to get products');
+        throw new Error('Admin authentication required');
+      }
+      
+      // Convert params to proper query string format
+      const queryParams: Record<string, string> = {};
+      
+      if (params) {
+        // Only include defined parameters
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            queryParams[key] = String(value);
+          }
+        });
+      }
+      
+      // Get products from API using admin token
+      const response = await api.get<ProductsResponse>('/api/products', queryParams, adminToken);
+      
+      // Process image URLs
+      if (response.products) {
+        response.products = response.products.map(product => ({
+          ...product,
+          image: getFullImageUrl(product.image),
+          images: product.images ? product.images.map(getFullImageUrl) : undefined
+        }));
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Error fetching products with admin token:', error);
+      // Return empty product response
+      return { products: [], page: 1, pages: 0, total: 0 };
+    }
+  }
+  
+  /**
    * Update a product (admin only)
    * Also updates the corresponding category's item count if the category changes
    */

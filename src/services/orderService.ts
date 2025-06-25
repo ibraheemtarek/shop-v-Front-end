@@ -99,9 +99,23 @@ class OrderService {
   /**
    * Get all orders (admin only)
    */
+  async getAdminOrders(): Promise<Order[]> {
+    return this.getOrders();
+  }
+  
+  /**
+   * Get all orders (admin only) - keeping for backward compatibility
+   */
   async getOrders(): Promise<Order[]> {
     try {
-      return await api.get<Order[]>('/api/orders');
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to fetch orders');
+        throw new Error('Admin authentication required');
+      }
+      
+      return await api.get<Order[]>('/api/orders', {}, adminToken);
     } catch (error) {
       console.error('Failed to fetch orders from API, using mock data:', error);
       return mockData.getOrders();
@@ -112,21 +126,42 @@ class OrderService {
    * Update order to delivered (admin only)
    */
   async updateOrderToDelivered(id: string): Promise<Order> {
-    return api.put<Order>(`/api/orders/${id}/deliver`, {});
+    const adminToken = localStorage.getItem('adminToken');
+    
+    if (!adminToken) {
+      console.error('Admin token not found when trying to update order delivery status');
+      throw new Error('Admin authentication required');
+    }
+    
+    return api.put<Order>(`/api/orders/${id}/deliver`, {}, adminToken);
   }
 
   /**
    * Update order status (admin only)
    */
   async updateOrderStatus(id: string, status: Order['status']): Promise<Order> {
-    return api.put<Order>(`/api/orders/${id}/status`, { status });
+    const adminToken = localStorage.getItem('adminToken');
+    
+    if (!adminToken) {
+      console.error('Admin token not found when trying to update order status');
+      throw new Error('Admin authentication required');
+    }
+    
+    return api.put<Order>(`/api/orders/${id}/status`, { status }, adminToken);
   }
 
   /**
    * Process refund for order (admin only)
    */
   async refundOrder(id: string, refundData: RefundData): Promise<Order> {
-    return api.put<Order>(`/api/orders/${id}/refund`, refundData);
+    const adminToken = localStorage.getItem('adminToken');
+    
+    if (!adminToken) {
+      console.error('Admin token not found when trying to process refund');
+      throw new Error('Admin authentication required');
+    }
+    
+    return api.put<Order>(`/api/orders/${id}/refund`, refundData, adminToken);
   }
 }
 

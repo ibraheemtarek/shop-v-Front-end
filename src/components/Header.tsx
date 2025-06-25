@@ -25,12 +25,20 @@ const Header = () => {
   const { cart } = useCart(); // Get cart data from CartContext
   const { wishlist } = useWishlist(); // Get wishlist data from WishlistContext
   
-  // Determine login status from AuthContext
-  const isLoggedIn = !!user;
+  // Determine login status from AuthContext - ONLY for regular user authentication
+  // Explicitly check that we have a user AND that the user is NOT an admin
+  const isLoggedIn = !!user && user.role !== 'admin';
   
   // Debug logging to help diagnose the issue
   useEffect(() => {
-    console.log('Auth state in Header:', { user, isLoggedIn, token: localStorage.getItem('token') });
+    console.log('Auth state in Header:', { 
+      user, 
+      isLoggedIn, 
+      token: localStorage.getItem('token'),
+      adminToken: localStorage.getItem('adminToken'),
+      userData: localStorage.getItem('userData'),
+      adminData: localStorage.getItem('adminData')
+    });
   }, [user, isLoggedIn]);
 
   const toggleMenu = () => {
@@ -109,19 +117,30 @@ const Header = () => {
               </button>
             </>
           ) : (
-            <Link to="/login">
+            <Link to="/login" state={{ from: { pathname: '/account' } }}>
               <Button variant="outline" size="sm">Login</Button>
             </Link>
           )}
           
-          <Link to="/account?tab=wishlist" className="relative">
-            <Heart className="h-5 w-5" />
-            {wishlist?.items?.length > 0 && (
-              <Badge className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center rounded-full p-0 text-xs">
-                {wishlist.items.length}
-              </Badge>
-            )}
-          </Link>
+          {isLoggedIn ? (
+            <Link to="/account?tab=wishlist" className="relative">
+              <Heart className="h-5 w-5" />
+              {wishlist?.items?.length > 0 && (
+                <Badge className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center rounded-full p-0 text-xs">
+                  {wishlist.items.length}
+                </Badge>
+              )}
+            </Link>
+          ) : (
+            <Link to="/login" state={{ from: { pathname: '/account', search: '?tab=wishlist' } }} className="relative">
+              <Heart className="h-5 w-5" />
+              {wishlist?.items?.length > 0 && (
+                <Badge className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center rounded-full p-0 text-xs">
+                  {wishlist.items.length}
+                </Badge>
+              )}
+            </Link>
+          )}
           
           <Link to="/cart" className="relative">
             <ShoppingCart className="h-5 w-5" />

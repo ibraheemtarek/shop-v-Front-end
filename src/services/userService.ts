@@ -68,16 +68,32 @@ class UserService {
   }
 
   /**
-   * Login user
+   * Login user - only for regular users, not admins
    */
   async login(loginData: LoginData): Promise<AuthResponse> {
     try {
-      // Normal API login
-      const response = await api.post<AuthResponse>('/api/auth/login', loginData);
+      // Normal API login - specify isAdmin=false to ensure proper token handling
+      const response = await api.post<AuthResponse>('/api/auth/login', loginData, undefined, false);
       
-      // Save token to localStorage
+      // Check if the user is an admin - if so, reject the login
+      // This ensures complete separation between user and admin authentication
+      if (response.role === 'admin') {
+        console.log('Admin login attempted through user login flow - rejecting');
+        throw new Error('Admin users must use the admin login page');
+      }
+      
+      // Only save token to localStorage for regular users
       if (response.token) {
         localStorage.setItem('token', response.token);
+        
+        // Mark authentication as recent to create a grace period before refresh checks
+        api.markRecentAuth(false);
+        
+        // Setup token refresh check with a delay to allow refresh token cookie to be set
+        setTimeout(() => {
+          api.setupTokenRefreshCheck();
+          console.log('Token refresh check setup after login');
+        }, 3000); // 3 second delay before first token check
       }
       
       return response;
@@ -88,10 +104,31 @@ class UserService {
   }
 
   /**
-   * Refresh access token
+   * Refresh access token for regular user
    */
   async refreshToken(): Promise<AuthResponse> {
-    return api.post<AuthResponse>('/api/auth/refresh', {});
+    try {
+      // Use the refreshAccessToken method with isAdmin=false
+      const newToken = await api.refreshAccessToken(false);
+      
+      // If successful, get updated user profile with new token
+      const userProfile = await this.getUserProfile();
+      
+      // Create response object with new token
+      const authResponse: AuthResponse = {
+        _id: userProfile._id,
+        firstName: userProfile.firstName,
+        lastName: userProfile.lastName,
+        email: userProfile.email,
+        role: userProfile.role,
+        token: newToken
+      };
+      
+      return authResponse;
+    } catch (error) {
+      console.error('User token refresh failed:', error);
+      throw error;
+    }
   }
 
   /**
@@ -126,35 +163,53 @@ class UserService {
    * Get user profile
    */
   async getUserProfile(): Promise<User> {
-    return api.get<User>('/api/users/profile');
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('User is not authenticated');
+    }
+    
+    try {
+      // Check token expiration before making the request
+      await api.checkTokenExpiration(token, false);
+      
+      // Use the token to get user profile
+      return api.get<User>('/api/users/profile', {}, token);
+    } catch (error) {
+      console.error('Failed to get user profile:', error);
+      throw error;
+    }
   }
 
   /**
    * Update user profile
    */
   async updateUserProfile(userData: Partial<User>): Promise<AuthResponse> {
-    return api.put<AuthResponse>('/api/users/profile', userData);
+    const token = localStorage.getItem('token');
+    return api.put<AuthResponse>('/api/users/profile', userData, token);
   }
 
   /**
    * Add product to wishlist
    */
   async addToWishlist(productId: string): Promise<{ message: string }> {
-    return api.post<{ message: string }>('/api/users/wishlist', { productId });
+    const token = localStorage.getItem('token');
+    return api.post<{ message: string }>('/api/users/wishlist', { productId }, token);
   }
 
   /**
    * Remove product from wishlist
    */
   async removeFromWishlist(productId: string): Promise<{ message: string }> {
-    return api.delete<{ message: string }>(`/api/users/wishlist/${productId}`);
+    const token = localStorage.getItem('token');
+    return api.delete<{ message: string }>(`/api/users/wishlist/${productId}`, token);
   }
 
   /**
    * Get user wishlist
    */
   async getWishlist(): Promise<Product[]> {
-    const response = await api.get<{ items: Product[] }>('/api/users/wishlist');
+    const token = localStorage.getItem('token');
+    const response = await api.get<{ items: Product[] }>('/api/users/wishlist', {}, token);
     return response.items || [];
   }
   
@@ -162,7 +217,16 @@ class UserService {
    * Get all users (admin only)
    */
   async getAllUsers(): Promise<User[]> {
-    return api.get<User[]>('/api/users/all');
+    // Use admin token for admin-only operations
+    const adminToken = localStorage.getItem('adminToken');
+    
+    if (!adminToken) {
+      console.error('Admin token not found when trying to get all users');
+      throw new Error('Admin authentication required');
+    }
+    
+    // The correct endpoint for getting all users
+    return api.get<User[]>('/api/users/all', {}, adminToken);
   }
 
   /**

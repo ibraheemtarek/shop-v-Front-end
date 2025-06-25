@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { useAdminAuth } from '@/context/adminAuthUtils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,20 +30,31 @@ import AdminDashboardContent from '@/components/admin/AdminDashboardContent';
 const AdminDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const location = useLocation();
+  const navigate = useNavigate();
   const { toast } = useToast();
+  const { logout } = useAdminAuth();
   
-  const handleLogout = () => {
-    // Clear authentication data
-    localStorage.removeItem('token');
-    localStorage.removeItem('userRole');
-    
-    toast({
-      title: "Logged out successfully",
-      description: "You have been logged out of your account",
-    });
-    
-    // Redirect to login page
-    window.location.href = '/admin/login';
+  const handleLogout = async () => {
+    try {
+      // Use the proper logout method from the admin auth context
+      // This will handle API calls and cleanup correctly
+      await logout();
+      
+      toast({
+        title: "Logged out successfully",
+        description: "You have been logged out of the admin dashboard",
+      });
+      
+      // Use React Router navigation instead of direct window.location
+      navigate('/admin/login');
+    } catch (error) {
+      console.error('Error during admin logout:', error);
+      toast({
+        title: "Logout Error",
+        description: "There was a problem logging out. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
   
   return (

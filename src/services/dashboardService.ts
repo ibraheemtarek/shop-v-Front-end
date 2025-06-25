@@ -33,16 +33,30 @@ class DashboardService {
    */
   async getDashboardStats(): Promise<DashboardStats> {
     try {
+      // Check for admin token
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to fetch dashboard stats');
+        throw new Error('Admin authentication required');
+      }
+      
       // Initialize default values
       let totalRevenue = 0;
       let totalOrders = 0;
       let totalProducts = 0;
-      let totalCustomers = 120; // Fallback value for customers
-      let recentOrders: any[] = [];
+      const totalCustomers = 120; // Fallback value for customers
+      let recentOrders: Array<{
+        id: string;
+        orderNumber: string;
+        date: string;
+        status: string;
+        total: number;
+      }> = [];
       
-      // Try to get product data
+      // Try to get product data using admin method
       try {
-        const productsResponse = await productService.getProducts({ limit: 1000 });
+        const productsResponse = await productService.getAdminProducts({ limit: 1000 });
         totalProducts = productsResponse.total || productsResponse.products?.length || 0;
       } catch (err) {
         console.error('Error fetching products for dashboard:', err);
@@ -56,7 +70,7 @@ class DashboardService {
         const token = localStorage.getItem('token');
         if (token) {
           // Only attempt to fetch orders if we have authentication
-          const orders = await orderService.getOrders();
+          const orders = await orderService.getAdminOrders();
           
           // Extract order information
           if (orders && Array.isArray(orders)) {
@@ -69,15 +83,18 @@ class DashboardService {
             );
             
             // Format recent orders (take the 5 most recent)
-            recentOrders = orders
+            const recentOrdersData = orders
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
               .slice(0, 5)
               .map(order => ({
                 id: order._id,
-                orderNumber: order.orderNumber || `#${order._id.substring(0, 6)}`,
+                orderNumber: order.orderNumber || order._id.substring(0, 8),
                 date: new Date(order.createdAt).toLocaleDateString(),
-                status: order.status || 'Processing',
-                total: order.totalPrice || 0
+                status: order.status || (order.isDelivered ? 'Delivered' : order.isPaid ? 'Processing' : 'Pending'),
+                total: order.totalPrice
               }));
+            
+            recentOrders = recentOrdersData;
           }
         } else {
           // If no token, use sample data

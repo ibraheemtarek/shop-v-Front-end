@@ -65,10 +65,10 @@ const AdminCustomers = () => {
         setLoading(true);
         setError(null);
         
-        // Check if user is authenticated with token
-        const token = localStorage.getItem('token');
-        if (!token) {
-          setError('Authentication required. Please log in as an admin.');
+        // Check if admin is authenticated with admin token
+        const adminToken = localStorage.getItem('adminToken');
+        if (!adminToken) {
+          setError('Admin authentication required. Please log in as an admin.');
           setLoading(false);
           return;
         }

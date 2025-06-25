@@ -1,30 +1,46 @@
 
-import { Link, useNavigate, Navigate } from 'react-router-dom';
+import { Link, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import LoginForm from '@/components/LoginForm';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useAuth } from '@/context/authUtils';
 
 const Login = () => {
   const navigate = useNavigate();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const location = useLocation();
+  const { user, loading } = useAuth();
   
-  useEffect(() => {
-    // Check if user has a token (is authenticated)
-    const token = localStorage.getItem('token');
-    setIsAuthenticated(!!token);
-  }, []);
+  // Get the redirect path and search params from location state or default to home
+  const fromPath = location.state?.from?.pathname || '/';
+  const fromSearch = location.state?.from?.search || '';
+  const from = `${fromPath}${fromSearch}`;
+  
+  // Debug logging to help diagnose the issue
+  console.log('Login component state:', { 
+    location, 
+    from, 
+    user, 
+    loading,
+    token: localStorage.getItem('token'),
+    adminToken: localStorage.getItem('adminToken')
+  });
   
   const handleLoginSuccess = () => {
-    navigate('/');
+    navigate(from, { replace: true });
   };
   
-  // If authenticated, redirect to home page
-  if (isAuthenticated) {
-    return <Navigate to="/" replace />;
+  // If authenticated as a regular user, redirect to the intended destination
+  if (user && user.role !== 'admin') {
+    return <Navigate to={from} replace />;
+  }
+  
+  // If authenticated as admin, redirect to admin dashboard
+  if (user && user.role === 'admin') {
+    return <Navigate to="/admin" replace />;
   }
   
   // Show loading state while checking authentication
-  if (isAuthenticated === null) {
+  if (loading) {
     return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
   }
 

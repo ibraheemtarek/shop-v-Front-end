@@ -16,7 +16,7 @@ export interface Category {
  */
 class CategoryService {
   /**
-   * Get all categories
+   * Get all categories (public method)
    */
   async getCategories(): Promise<Category[]> {
     try {
@@ -237,6 +237,36 @@ class CategoryService {
     } catch (error) {
       console.error('Failed to delete category image via API:', error);
       throw new Error('Failed to delete category image');
+    }
+  }
+  
+  /**
+   * Get all categories (admin only)
+   */
+  async getAdminCategories(): Promise<Category[]> {
+    try {
+      // Use admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to get categories');
+        throw new Error('Admin authentication required');
+      }
+      
+      // Get categories from API using admin token
+      const categories = await api.get<Category[]>('/api/categories', {}, adminToken);
+      
+      // Process image URLs
+      categories.forEach(category => {
+        if (category.image) {
+          category.image = getFullImageUrl(category.image);
+        }
+      });
+      
+      return categories;
+    } catch (error) {
+      console.error('Error fetching categories with admin token:', error);
+      throw error;
     }
   }
 }

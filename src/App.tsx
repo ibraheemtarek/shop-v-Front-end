@@ -19,6 +19,7 @@ import Register from "./pages/Register";
 import Admin from "./pages/Admin";
 import AdminLogin from "./pages/AdminLogin";
 import AdminProtectedRoute from "./components/Auth/AdminProtectedRoute";
+import UserProtectedRoute from "./components/Auth/UserProtectedRoute";
 import Account from "./pages/Account";
 import NotFound from "./pages/NotFound";
 import Contact from "./pages/Contact";
@@ -36,6 +37,7 @@ import TestLogin from "./pages/TestLogin";
 import CreateAdmin from "./pages/CreateAdmin";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import AuthTest from "./pages/AuthTest";
 
 const queryClient = new QueryClient();
 
@@ -65,24 +67,31 @@ const App = () => {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/admin/login" element={<AdminLogin />} />
+              
+              {/* Admin routes - protected by AdminProtectedRoute */}
               <Route element={<AdminProtectedRoute />}>
                 <Route path="/admin/*" element={<Admin />} />
               </Route>
-              <Route path="/account" element={<Account />} />
+              
+              {/* User routes - protected by UserProtectedRoute */}
+              <Route element={<UserProtectedRoute />}>
+                <Route path="/account/*" element={<Account />} />
+                <Route path="/checkout" element={<Checkout />} />
+                <Route path="/order/:id" element={<OrderDetail />} />
+                <Route path="/order-success/:id" element={<OrderSuccess />} />
+              </Route>
               <Route path="/contact" element={<Contact />} />
               <Route path="/about" element={<About />} />
               <Route path="/categories" element={<Categories />} />
               <Route path="/category" element={<Categories />} />
               <Route path="/category/:slug" element={<Category />} />
-              <Route path="/checkout" element={<Checkout />} />
-              <Route path="/order/:id" element={<OrderDetail />} />
-              <Route path="/order-success/:id" element={<OrderSuccess />} />
               <Route path="/faqs" element={<FAQs />} />
               <Route path="/policy" element={<Policy />} />
               <Route path="/shipping-returns" element={<ShippingReturns />} />
               <Route path="/deals" element={<Deals />} />
               <Route path="/test-login" element={<TestLogin />} />
               <Route path="/create-admin" element={<CreateAdmin />} />
+              <Route path="/auth-test" element={<AuthTest />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

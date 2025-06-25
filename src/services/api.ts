@@ -2,10 +2,16 @@ import API_CONFIG from '../config/api';
 
 // Flag to prevent multiple refresh token requests
 let isRefreshing = false;
+// Token refresh timer reference
+let tokenRefreshTimer: ReturnType<typeof setTimeout> | ReturnType<typeof setInterval> | null = null;
 // Queue of callbacks to run after token refresh
 let refreshSubscribers: Array<(token: string) => void> = [];
-// Token refresh timer
-let tokenRefreshTimer: number | null = null;
+// Track recent authentication to avoid premature refresh attempts
+const recentAuthTime: { [key: string]: number } = {};
+// Track last token check time to prevent frequent checks
+const lastTokenCheck: { [key: string]: number } = {};
+// Track last refresh attempt time to prevent frequent refreshes
+const lastRefreshAttempt: { [key: string]: number } = {};
 
 /**
  * Add a callback to the refresh queue
@@ -62,6 +68,40 @@ class ApiService {
   //   return '';
   // }
 
+  /**
+   * Marks that authentication has recently happened for a specific token type
+   * This prevents premature refresh attempts before HTTP-only cookies are set
+   */
+  markRecentAuth(isAdmin: boolean = false) {
+    const tokenType = isAdmin ? 'admin' : 'user';
+    recentAuthTime[tokenType] = Date.now();
+    console.log(`Marked recent ${tokenType} authentication at ${new Date().toISOString()}`);
+    
+    // Store in sessionStorage for synchronization across tabs
+    sessionStorage.setItem(`recent${tokenType}Auth`, Date.now().toString());
+  }
+  
+  /**
+   * Checks if we're within the post-authentication grace period
+   * Returns true if recent authentication happened within the specified time window
+   */
+  isWithinAuthGracePeriod(isAdmin: boolean = false, graceWindowMs: number = 30000): boolean {
+    const tokenType = isAdmin ? 'admin' : 'user';
+    
+    // Check both memory and sessionStorage (for cross-tab support)
+    const lastAuthMemory = recentAuthTime[tokenType] || 0;
+    const lastAuthStorage = parseInt(sessionStorage.getItem(`recent${tokenType}Auth`) || '0', 10);
+    const lastAuth = Math.max(lastAuthMemory, lastAuthStorage);
+    
+    const isRecent = Date.now() - lastAuth < graceWindowMs;
+    
+    if (isRecent) {
+      console.log(`${tokenType} auth in grace period (${Math.floor((Date.now() - lastAuth)/1000)}s ago), skipping refresh check`);
+    }
+    
+    return isRecent;
+  }
+
   // /**
   //  * Check if an endpoint requires CSRF protection - DISABLED
   //  * @param endpoint - API endpoint
@@ -108,63 +148,162 @@ class ApiService {
   /**
    * Check if token is about to expire and refresh it proactively
    * @param token Current access token
+   * @param isAdmin Whether this is an admin token
    * @returns Promise that resolves when token check is complete
    */
-  async checkTokenExpiration(token: string): Promise<void> {
-    const expTime = this.parseTokenExpiration(token);
-    if (!expTime) return;
+  async checkTokenExpiration(token: string, isAdmin: boolean = false): Promise<void> {
+    const tokenType = isAdmin ? 'admin' : 'user';
     
-    const currentTime = Date.now();
-    const timeToExpire = expTime - currentTime;
+    // Don't attempt to check an empty token
+    if (!token) {
+      console.log(`No ${tokenType} token provided for expiration check`);
+      return;
+    }
     
-    // If token expires in less than 5 minutes (300000ms), refresh it proactively
-    if (timeToExpire < 300000 && timeToExpire > 0) {
-      console.log('Token expiring soon, refreshing proactively...');
-      try {
-        await this.refreshAccessToken();
-      } catch (error) {
-        console.error('Proactive token refresh failed:', error);
+    // Prevent checking too frequently by throttling
+    const checkKey = `last${tokenType.charAt(0).toUpperCase() + tokenType.slice(1)}ExpirationCheck`;
+    const lastCheckTime = parseInt(sessionStorage.getItem(checkKey) || '0', 10);
+    const now = Date.now();
+    const checkMinInterval = 30000; // 30 seconds between checks
+    
+    if (now - lastCheckTime < checkMinInterval) {
+      // Skip check if we checked recently
+      console.debug(`Skipping ${tokenType} token expiration check - checked too recently`);
+      return;
+    }
+    
+    // Update last check time
+    sessionStorage.setItem(checkKey, now.toString());
+    
+    // Skip token check if we're in the grace period after a recent login
+    // This prevents premature refresh attempts before HTTP-only cookies are properly set
+    if (this.isWithinAuthGracePeriod(isAdmin, 15000)) { // 15-second grace period
+      console.log(`Skipping ${tokenType} token check - within post-login grace period`);
+      return;
+    }
+    
+    try {
+      const expTime = this.parseTokenExpiration(token);
+      
+      // If we can't parse the token's expiration time
+      if (!expTime) {
+        console.warn(`Invalid ${tokenType} token format, cannot determine expiration`);
+        // Don't attempt to refresh invalid tokens, but don't trigger logout either
+        // The token might still be valid even if we can't parse it
+        return;
       }
-    } else if (timeToExpire <= 0) {
-      // Token has already expired
-      console.log('Token already expired, forcing refresh...');
-      try {
-        await this.refreshAccessToken();
-      } catch (error) {
-        console.error('Token refresh failed for expired token:', error);
-        // Clear auth data since refresh failed
-        localStorage.removeItem('token');
-        localStorage.removeItem('userRole');
-        // Redirect to login
-        window.location.href = '/login';
+      
+      const currentTime = Date.now();
+      const timeToExpire = expTime - currentTime;
+      
+      console.debug(`${tokenType} token expires in ${Math.floor(timeToExpire/1000)} seconds`);
+      
+      // Different strategies based on token expiration time:
+      // 1. If token expires soon (within 5 minutes), refresh proactively
+      // 2. If token recently expired (less than 1 hour ago), try to recover it
+      // 3. If token is valid and not expiring soon, do nothing
+      
+      // Case 1: Token expiring soon but still valid
+      if (timeToExpire < 300000 && timeToExpire > 0) {
+        console.log(`${tokenType} token expiring soon (in ${Math.floor(timeToExpire/1000)}s), refreshing proactively`);
+        try {
+          const newToken = await this.refreshAccessToken(isAdmin);
+          console.log(`Proactive ${tokenType} token refresh successful, new token acquired`);
+          return;
+        } catch (error) {
+          // Don't fail on proactive refresh failures
+          console.warn(`Proactive ${tokenType} token refresh failed:`, error);
+          console.log(`Continuing with current ${tokenType} token until expiration`);
+          // Continue with current token - don't logout for proactive refresh failures
+          return;
+        }
       }
+      
+      // Case 2: Token already expired but not too old - try to recover
+      else if (timeToExpire <= 0 && timeToExpire > -3600000) {
+        console.log(`${tokenType} token recently expired (${Math.abs(Math.floor(timeToExpire/1000))}s ago), attempting recovery`);
+        try {
+          const newToken = await this.refreshAccessToken(isAdmin);
+          console.log(`${tokenType} token recovery successful, new token acquired`);
+          return;
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('Auth error')) {
+            console.error(`${tokenType} token recovery failed with auth error:`, error);
+            // Let the auth contexts handle the logout flow
+          } else {
+            console.warn(`${tokenType} token recovery failed with non-auth error:`, error);
+            // For network errors etc., don't trigger logout
+          }
+          return;
+        }
+      }
+      
+      // Case 3: Token is valid and not expiring soon - nothing to do
+      else if (timeToExpire > 300000) {
+        console.debug(`${tokenType} token valid for ${Math.floor(timeToExpire/1000)}s more, no action needed`);
+      }
+      
+      // Case 4: Token expired long ago - unlikely to be recoverable
+      else {
+        console.warn(`${tokenType} token expired too long ago (${Math.abs(Math.floor(timeToExpire/1000))}s), unlikely to be refreshable`);
+        // Don't attempt refresh for very old tokens
+      }
+    } catch (error) {
+      console.error(`Error checking ${tokenType} token expiration:`, error);
+      // Don't trigger logout on expiration check errors, just let the user continue
     }
   }
 
   /**
-   * Setup automatic token refresh checks
+   * Setup automatic token refresh check based on expiration time
    */
-  setupTokenRefreshCheck(): void {
-    // Clear any existing timer
-    if (tokenRefreshTimer !== null) {
-      window.clearInterval(tokenRefreshTimer);
+  setupTokenRefreshCheck() {
+    // Clear existing timer if any
+    if (tokenRefreshTimer) {
+      clearInterval(tokenRefreshTimer);
+      console.log('Cleared existing token refresh timer');
     }
     
-    // Check token expiration every minute
-    tokenRefreshTimer = window.setInterval(() => {
-      const token = localStorage.getItem('token');
-      if (token) {
-        this.checkTokenExpiration(token).catch(console.error);
-      }
-    }, 60000); // Check every minute
+    // Initial delay before starting token checks after page load
+    // This is important for cross-origin scenarios where cookie setup takes time
+    const initialDelay = 5000; // 5 second initial delay
+    
+    console.log(`Setting up token refresh timer with ${initialDelay}ms initial delay`);
+    
+    // Set a timeout for the initial delay
+    setTimeout(() => {
+      console.log('Initial delay complete, starting periodic token checks');
+      
+      // Check token expiration every minute
+      tokenRefreshTimer = setInterval(() => {
+        // Check both user and admin tokens if they exist
+        const userToken = localStorage.getItem('token');
+        const adminToken = localStorage.getItem('adminToken');
+        
+        if (userToken) {
+          this.checkTokenExpiration(userToken, false).catch(err => {
+            console.error('User token check failed:', err);
+          });
+        }
+        
+        if (adminToken) {
+          this.checkTokenExpiration(adminToken, true).catch(err => {
+            console.error('Admin token check failed:', err);
+          });
+        }
+      }, 60000); // Check every minute
+    }, initialDelay);
   }
 
   /**
    * Refresh the access token
+   * @param isAdmin - Whether to refresh admin token or user token
    * @returns Promise with the new token
    */
-  async refreshAccessToken(): Promise<string> {
+  async refreshAccessToken(isAdmin: boolean = false): Promise<string> {
+    // Use different refresh status tracking based on token type
     if (isRefreshing) {
+      console.log(`Token refresh already in progress, waiting for completion...`);
       // If already refreshing, wait for it to complete
       return new Promise((resolve) => {
         subscribeTokenRefresh((token) => {
@@ -173,9 +312,23 @@ class ApiService {
       });
     }
     
+    // Add throttling to prevent excessive refresh attempts
+    const refreshKey = isAdmin ? 'lastAdminRefreshAttempt' : 'lastUserRefreshAttempt';
+    const lastRefreshTime = parseInt(sessionStorage.getItem(refreshKey) || '0', 10);
+    const now = Date.now();
+    const refreshMinInterval = 5000; // Minimum 5 seconds between refresh attempts
+    
+    if (now - lastRefreshTime < refreshMinInterval) {
+      console.log(`Skipping ${isAdmin ? 'admin' : 'user'} token refresh - attempted too recently`);
+      return isAdmin ? localStorage.getItem('adminToken') || '' : localStorage.getItem('token') || '';
+    }
+    
+    // Update last refresh attempt time
+    sessionStorage.setItem(refreshKey, now.toString());
+    
     try {
       isRefreshing = true;
-      console.log('Refreshing access token...');
+      console.log(`Refreshing ${isAdmin ? 'admin' : 'user'} access token...`);
       
       // Check if we're in cross-origin mode
       const crossOriginMode = API_CONFIG.isCrossOrigin();
@@ -185,7 +338,14 @@ class ApiService {
         // Add headers to help the server identify the client in cross-origin mode
         headers['Origin'] = window.location.origin;
         headers['X-Frontend-Domain'] = API_CONFIG.PRODUCTION_DOMAIN;
+        headers['X-Requested-With'] = 'XMLHttpRequest';
         console.log('Added cross-origin headers for token refresh');
+        console.log('Cross-origin mode active, ensuring SameSite=None cookies are handled correctly');
+      }
+      
+      // Add token type indicator to help server distinguish between admin and user refresh
+      if (isAdmin) {
+        headers['X-Token-Type'] = 'admin';
       }
       
       // Call the refresh token endpoint which will use the httpOnly refresh token cookie
@@ -193,20 +353,75 @@ class ApiService {
       const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/refresh`, {
         method: 'POST',
         headers,
-        credentials: 'include',
+        credentials: 'include', // Important for including cookies with the request
       });
       
       // Log response details for debugging
       console.debug(`Refresh token response status: ${response.status}`);
-      console.debug('Refresh token response headers:', [...response.headers.entries()]);
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Token refresh failed with status ${response.status}:`, errorText);
-        throw new Error(`Token refresh failed: ${response.status} - ${errorText}`);
+      // Parse the response - even error responses
+      let data;
+      let errorText = '';
+      
+      try {
+        const responseText = await response.text();
+        try {
+          // Try to parse as JSON
+          data = JSON.parse(responseText);
+          errorText = data.message || responseText;
+        } catch (e) {
+          // If not valid JSON, use as text
+          errorText = responseText;
+        }
+      } catch (e) {
+        errorText = 'Could not read response body';
       }
       
-      const data = await response.json();
+      // Handle HTTP status codes based on backend implementation:
+      // - 401: Authentication error (invalid token, no token) - should logout
+      // - 500: Server error - shouldn't logout, just retry later
+      if (!response.ok) {
+        const statusCode = response.status;
+        const errorType = data?.error || 'unknown_error';
+        
+        console.error(`Token refresh failed with status ${statusCode}:`, errorText);
+        
+        // For authentication failures, we need to evaluate if we should logout
+        if (statusCode === 401 && (errorType === 'no_token' || errorType === 'invalid_token')) {
+          console.warn(`Authentication failure during token refresh: ${errorType}`);
+          
+          // Check if this is happening during the post-login grace period
+          // The backend returns 'no_token' when the refresh token cookie isn't present
+          if (errorType === 'no_token') {
+            if (this.isWithinAuthGracePeriod(isAdmin, 30000)) {
+              console.warn('No refresh token cookie during grace period - normal after fresh login');
+              console.log('Will retry token refresh later once cookie is available');
+              // Return current token and avoid logout during grace period
+              return isAdmin ? localStorage.getItem('adminToken') || '' : localStorage.getItem('token') || '';
+            } else {
+              // If we're not in a grace period, the refresh token cookie is genuinely missing
+              console.warn('Refresh token cookie missing outside of grace period');
+              throw new Error(`Auth error: ${errorType}`);
+            }
+          } 
+          // Invalid token means the refresh token exists but is invalid/expired
+          else if (errorType === 'invalid_token') {
+            console.warn('Invalid refresh token detected');
+            throw new Error(`Auth error: ${errorType}`);
+          }
+          
+          // Otherwise it's a genuine authentication failure
+          throw new Error(`Auth error: ${errorType}`);
+        } 
+        // For server errors or other issues, we can keep the current token and try again later
+        else {
+          console.warn(`Server or network error during token refresh. Will retry later.`);
+          // Return current token and don't trigger logout for server errors
+          return isAdmin ? localStorage.getItem('adminToken') || '' : localStorage.getItem('token') || '';
+        }
+      }
+      
+      // Process successful response
       const newToken = data.token;
       
       if (!newToken) {
@@ -214,24 +429,37 @@ class ApiService {
         throw new Error('No token returned from refresh endpoint');
       }
       
-      console.log('Token refresh successful, new token received');
+      // Store the new token in the appropriate storage key
+      if (isAdmin) {
+        localStorage.setItem('adminToken', newToken);
+      } else {
+        localStorage.setItem('token', newToken);
+      }
       
-      // Store the new token
-      localStorage.setItem('token', newToken);
-      
-      // Notify all subscribers that the token has been refreshed
+      // Notify subscribers that token has been refreshed
       onTokenRefreshed(newToken);
       
       return newToken;
     } catch (error) {
-      console.error('Token refresh failed:', error);
-      // Clear auth data since refresh failed
-      localStorage.removeItem('token');
-      localStorage.removeItem('userRole');
-      // Only redirect to login if we're not already on the login page
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
+      console.error(`${isAdmin ? 'Admin' : 'User'} token refresh failed:`, error);
+      
+      // Only clear tokens and logout for authentication errors
+      if (error instanceof Error && 
+          (error.message.includes('Auth error') || 
+           error.message.includes('No token returned'))) {
+        console.warn('Confirmed authentication failure, proceeding with logout');
+        if (isAdmin) {
+          localStorage.removeItem('adminToken');
+          localStorage.removeItem('adminData');
+        } else {
+          localStorage.removeItem('token');
+          localStorage.removeItem('userData');
+        }
+      } else {
+        // For other errors like network issues, don't clear tokens
+        console.warn('Non-authentication error during token refresh, keeping tokens');
       }
+      
       throw error;
     } finally {
       isRefreshing = false;
@@ -241,18 +469,19 @@ class ApiService {
   /**
    * Handle unauthorized errors (401) by refreshing the token
    * @param originalRequest The original failed request
+   * @param isAdmin Whether to use admin token refresh or user token refresh
    */
-  async handleTokenRefresh(originalRequest: ApiRequest): Promise<ApiRequest> {
+  async handleTokenRefresh(originalRequest: ApiRequest, isAdmin: boolean = false): Promise<ApiRequest> {
     try {
-      const newToken = await this.refreshAccessToken();
+      const newToken = await this.refreshAccessToken(isAdmin);
       return retryOriginalRequest(originalRequest, newToken);
     } catch (error) {
-      console.error('Token refresh failed during request retry:', error);
+      console.error(`${isAdmin ? 'Admin' : 'User'} token refresh failed during request retry:`, error);
       throw error;
     }
   }
   
-  async get<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
+  async get<T>(endpoint: string, params?: Record<string, string>, customToken?: string): Promise<T> {
     // Use the configured API base URL
     const url = new URL(`${API_CONFIG.BASE_URL}${endpoint}`);
     
@@ -297,15 +526,18 @@ class ApiService {
    * Make a POST request
    * @param endpoint - API endpoint
    * @param data - Request body data
+   * @param customToken - Optional custom token to use instead of localStorage token
+   * @param isAdmin - Whether to use admin token or user token
    * @returns Promise with response data
    */
-  async post<T>(endpoint: string, data: unknown): Promise<T> {
+  async post<T>(endpoint: string, data: unknown, customToken?: string, isAdmin: boolean = false): Promise<T> {
     // Use the configured API base URL
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
-    console.log('Making POST request to:', url);
+    console.log(`Making ${isAdmin ? 'admin' : 'user'} POST request to:`, url);
     
     try {
-      const token = localStorage.getItem('token');
+      // Use custom token if provided, otherwise get appropriate token based on isAdmin flag
+      const token = customToken || (isAdmin ? localStorage.getItem('adminToken') : localStorage.getItem('token'));
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
       };
@@ -321,6 +553,11 @@ class ApiService {
         headers['Origin'] = window.location.origin;
         headers['X-Frontend-Domain'] = API_CONFIG.PRODUCTION_DOMAIN;
         console.log('Added cross-origin headers for production environment');
+      }
+      
+      // Add token type indicator to help server distinguish between admin and user tokens
+      if (isAdmin) {
+        headers['X-Token-Type'] = 'admin';
       }
       
       // CSRF protection has been disabled for this project
@@ -340,8 +577,9 @@ class ApiService {
       console.debug('Response headers:', [...response.headers.entries()]);
 
       if (!response.ok) {
-        // If unauthorized and we have a token, try to refresh it
-        if (response.status === 401 && localStorage.getItem('token') && 
+        // If unauthorized, try to refresh the appropriate token based on isAdmin flag
+        if (response.status === 401 && 
+            ((isAdmin && localStorage.getItem('adminToken')) || (!isAdmin && localStorage.getItem('token'))) && 
             !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/refresh')) {
           // Clone the original request for retry
           const originalRequest = {
@@ -352,8 +590,8 @@ class ApiService {
           };
           
           // Try to refresh the token and retry the request
-          await this.handleTokenRefresh(originalRequest);
-          return this.post<T>(endpoint, data);
+          await this.handleTokenRefresh(originalRequest, isAdmin);
+          return this.post<T>(endpoint, data, customToken, isAdmin);
         }
 
         try {
@@ -367,7 +605,7 @@ class ApiService {
       
       return await response.json();
     } catch (error) {
-      console.error('POST request failed:', error);
+      console.error(`${isAdmin ? 'Admin' : 'User'} POST request failed:`, error);
       throw error;
     }
   }
@@ -378,7 +616,7 @@ class ApiService {
    * @param data - Request body data
    * @returns Promise with response data
    */
-  async put<T>(endpoint: string, data: unknown): Promise<T> {
+  async put<T>(endpoint: string, data: unknown, customToken?: string): Promise<T> {
     // Use the configured API base URL
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
     console.log('Making PUT request to:', url);
@@ -423,7 +661,7 @@ class ApiService {
         
         // Try to refresh the token and retry the request
         await this.handleTokenRefresh(originalRequest);
-        return this.put<T>(endpoint, data);
+        return this.put<T>(endpoint, data, customToken);
       }
 
       try {
@@ -442,7 +680,7 @@ class ApiService {
    * @param endpoint - API endpoint
    * @returns Promise with response data
    */
-  async delete<T>(endpoint: string): Promise<T> {
+  async delete<T>(endpoint: string, customToken?: string): Promise<T> {
     // Use the configured API base URL
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
     console.log('Making DELETE request to:', url);
@@ -485,7 +723,7 @@ class ApiService {
         
         // Try to refresh the token and retry the request
         await this.handleTokenRefresh(originalRequest);
-        return this.delete<T>(endpoint);
+        return this.delete<T>(endpoint, customToken);
       }
 
       try {
@@ -504,7 +742,7 @@ class ApiService {
    * @param formData - FormData with files
    * @returns Promise with response data
    */
-  async uploadFile<T>(endpoint: string, formData: FormData): Promise<T> {
+  async uploadFile<T>(endpoint: string, formData: FormData, customToken?: string): Promise<T> {
     // Use the configured API base URL
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
     console.log('Making file upload request to:', url);
@@ -524,7 +762,8 @@ class ApiService {
       console.error('Error logging FormData:', error);
     }
     
-    const token = localStorage.getItem('token');
+    // Use custom token if provided, otherwise fallback to localStorage token
+    const token = customToken || localStorage.getItem('token');
     const headers: HeadersInit = {};
     
     if (token) {

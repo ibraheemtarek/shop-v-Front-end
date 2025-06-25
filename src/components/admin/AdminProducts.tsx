@@ -71,19 +71,19 @@ const AdminProducts = () => {
         setLoading(true);
         setError(null);
         
-        // Check if user is authenticated with token
-        const token = localStorage.getItem('token');
-        if (!token) {
-          setError('Authentication required. Please log in as an admin.');
+        // Check if admin is authenticated with admin token
+        const adminToken = localStorage.getItem('adminToken');
+        if (!adminToken) {
+          setError('Admin authentication required. Please log in as an admin.');
           setLoading(false);
           return;
         }
         
-        // Fetch products
-        const productsResponse = await productService.getProducts();
+        // Fetch products using admin method
+        const productsResponse = await productService.getAdminProducts();
         
-        // Fetch categories for dropdown
-        const categoriesData = await categoryService.getCategories();
+        // Fetch categories for dropdown using admin method
+        const categoriesData = await categoryService.getAdminCategories();
         
         // Transform API products to our local format
         const transformedProducts = productsResponse.products.map(product => ({

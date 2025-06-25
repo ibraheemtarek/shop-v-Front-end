@@ -1,6 +1,6 @@
 import { Navigate, useLocation, Outlet } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
-import { useAdminAuth } from '@/context/AdminAuthContext';
+import { useAdminAuth } from '@/context/adminAuthUtils';
 
 /**
  * Protected route component that checks if the user is authenticated as an admin

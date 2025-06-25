@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import userService from '@/services/userService';
 import { Loader2 } from 'lucide-react';
-import { useAdminAuth } from '@/context/AdminAuthContext';
+import { useAdminAuth } from '@/context/adminAuthUtils';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -16,10 +15,20 @@ const AdminLogin = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAdmin, isLoading, checkAdminStatus } = useAdminAuth();
+  const { isAdmin, isLoading, checkAdminStatus, login } = useAdminAuth();
   
   // Get the redirect path from location state or default to /admin
   const from = location.state?.from?.pathname || '/admin';
+  
+  // Debug logging to help diagnose the issue
+  console.log('AdminLogin component state:', { 
+    location, 
+    from, 
+    isAdmin, 
+    isLoading,
+    token: localStorage.getItem('token'),
+    adminToken: localStorage.getItem('adminToken')
+  });
   
   // Check if user is already authenticated as admin
   useEffect(() => {
@@ -32,38 +41,19 @@ const AdminLogin = () => {
     };
     
     checkAuth();
-  }, []);
+  }, [checkAdminStatus, from, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
       setLoading(true);
-      const response = await userService.login({ email, password });
-      
-      if (response.role !== 'admin') {
-        toast({
-          title: 'Access Denied',
-          description: 'This area is restricted to administrators only.',
-          variant: 'destructive',
-        });
-        // Clear any existing tokens
-        localStorage.removeItem('token');
-        localStorage.removeItem('userRole');
-        return;
-      }
+      const response = await login(email, password);
       
       toast({
         title: 'Login Successful',
         description: `Welcome back, ${response.firstName}!`,
       });
-      
-      // Store token in localStorage
-      localStorage.setItem('token', response.token);
-      localStorage.setItem('userRole', response.role);
-      
-      // Update admin status in context
-      await checkAdminStatus();
       
       // Redirect to the original destination
       navigate(from, { replace: true });
@@ -125,23 +115,24 @@ const AdminLogin = () => {
                   required
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Signing in...
-                  </>
-                ) : (
-                  'Sign in'
-                )}
-              </Button>
+              <CardFooter className="flex flex-col space-y-4">
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    'Sign in'
+                  )}
+                </Button>
+                <p className="text-center text-sm text-muted-foreground">
+                  Looking for the customer login? <Link to="/login" className="text-brand-blue hover:underline">Go to user login</Link>
+                </p>
+              </CardFooter>
             </form>
           </CardContent>
-          <CardFooter className="flex justify-center">
-            <p className="text-sm text-gray-500">
-              Not an administrator? <a href="/login" className="font-medium text-blue-600 hover:text-blue-500">Return to customer login</a>
-            </p>
-          </CardFooter>
+
         </Card>
         
         <div className="text-center mt-4">
