@@ -35,72 +35,149 @@ export const AdminAuthProvider = ({ children }: AdminAuthProviderProps) => {
 
       // Get admin token and check if it's valid/expired
       const adminToken = localStorage.getItem('adminToken');
-      if (adminToken) {
+      const adminData = localStorage.getItem('adminData');
+      
+      if (adminToken && adminData) {
         try {
-          // Check if token needs refresh before verifying
-          await api.checkTokenExpiration(adminToken, true);
+          // First, check if token is still valid before making any API calls
+          const tokenExp = api.parseTokenExpiration(adminToken);
+          const now = Date.now();
           
-          // Verify with API
-          const adminProfile = await adminService.getAdminProfile();
-          const isAdminUser = adminProfile.role === 'admin';
+          // If token is still valid (not expired or about to expire), use it without API validation
+          if (tokenExp && tokenExp > now + 60000) { // Still valid for at least 1 minute
+            console.log('Current admin token is still valid, continuing session without API validation');
+            try {
+              const parsedData = JSON.parse(adminData);
+              const isAdminUser = parsedData.role === 'admin';
+              
+              // Mark as recent auth to prevent immediate refresh attempts
+              api.markRecentAuth(true);
+              
+              // Skip API verification to avoid 401 errors if refresh token cookie is missing
+              setIsAdmin(isAdminUser);
+              return isAdminUser;
+            } catch (parseError) {
+              console.error('Error parsing admin data:', parseError);
+            }
+          }
           
-          setIsAdmin(isAdminUser);
-          return isAdminUser;
-        } catch (error) {
-          console.error('Error verifying admin status:', error);
+          // Only try API verification if we're sure the token is valid
+          console.log('Token needs verification or refresh, proceeding with caution');
           
-          // Try to refresh token if verification fails
           try {
-            // Use directly api.refreshAccessToken since refreshAdminToken
-            // isn't defined yet when checkAdminStatus is created
-            console.log('Attempting admin token refresh during status check...');
-            const newToken = await api.refreshAccessToken(true);
-            
-            // If refresh successful, verify again with fresh token
+            // Try to verify first
             const adminProfile = await adminService.getAdminProfile();
             const isAdminUser = adminProfile.role === 'admin';
             
-            console.log('Admin token refresh successful, admin status verified');
+            console.log('Admin profile verification successful');
             setIsAdmin(isAdminUser);
             return isAdminUser;
-          } catch (refreshError) {
-            console.error('Admin token refresh failed during status check:', refreshError);
+          } catch (verifyError) {
+            console.error('Error verifying admin status:', verifyError);
             
-            // Only clear tokens on authentication errors
-            if (refreshError instanceof Error && 
-                (refreshError.message.includes('Auth error') || 
-                 refreshError.message.includes('401') || 
-                 refreshError.message.includes('403'))) {
-              console.warn('Authentication error during admin token refresh, logging out');
-              setIsAdmin(false);
-              localStorage.removeItem('adminToken');
-              localStorage.removeItem('adminData');
-              return false;
-            } else {
-              // For network errors, etc. keep the session active
-              console.warn('Non-auth error during admin token refresh, maintaining session');
-              // Try to use existing token/status if possible
+            // Check if the token is actually expired
+            if (tokenExp && tokenExp <= now) {
+              console.warn('Admin token is expired, attempting refresh');
+              // Try to refresh token if verification fails
               try {
-                const adminData = localStorage.getItem('adminData');
-                if (adminData) {
-                  const parsedData = JSON.parse(adminData);
-                  const isAdminUser = parsedData.role === 'admin';
-                  setIsAdmin(isAdminUser);
-                  return isAdminUser;
+                console.log('Attempting admin token refresh during status check...');
+                const newToken = await api.refreshAccessToken(true);
+                
+                // If refresh successful, verify again with fresh token
+                const adminProfile = await adminService.getAdminProfile();
+                const isAdminUser = adminProfile.role === 'admin';
+                
+                console.log('Admin token refresh successful, admin status verified');
+                setIsAdmin(isAdminUser);
+                return isAdminUser;
+              } catch (refreshError) {
+                console.error('Admin token refresh failed during status check:', refreshError);
+                
+                // For refresh token cookie issues (likely missing after reload)
+                const errorMsg = refreshError instanceof Error ? refreshError.message : 'unknown';
+                if (errorMsg.includes('no_token') || errorMsg.includes('401')) {
+                  console.warn('Refresh token cookie issue detected (likely missing after page reload)');
+                  
+                  // If the token isn't completely expired yet, continue session
+                  if (tokenExp && tokenExp > now) {
+                    console.log('Using existing admin token since it still has some validity');
+                    try {
+                      const parsedData = JSON.parse(adminData);
+                      const isAdminUser = parsedData.role === 'admin';
+                      setIsAdmin(isAdminUser);
+                      return isAdminUser;
+                    } catch (parseError) {
+                      console.error('Error parsing admin data:', parseError);
+                    }
+                  } else {
+                    // Token is truly expired AND refresh failed, need to logout
+                    console.warn('Admin token is expired and refresh failed, logging out');
+                    setIsAdmin(false);
+                    localStorage.removeItem('adminToken');
+                    localStorage.removeItem('adminData');
+                    return false;
+                  }
+                } else {
+                  // Only clear tokens on specific authentication errors
+                  if (refreshError instanceof Error && 
+                      (refreshError.message.includes('invalid_token') || 
+                       refreshError.message.includes('403'))) {
+                    console.warn('Authentication error during admin token refresh, logging out');
+                    setIsAdmin(false);
+                    localStorage.removeItem('adminToken');
+                    localStorage.removeItem('adminData');
+                    return false;
+                  } else {
+                    // For network errors, etc. keep the session active if token still valid
+                    console.warn('Non-auth error during admin token refresh, maintaining session if possible');
+                    if (tokenExp && tokenExp > now) {
+                      console.log('Using existing admin token since it still has some validity');
+                      try {
+                        const parsedData = JSON.parse(adminData);
+                        const isAdminUser = parsedData.role === 'admin';
+                        setIsAdmin(isAdminUser);
+                        return isAdminUser;
+                      } catch (parseError) {
+                        console.error('Error parsing admin data:', parseError);
+                      }
+                    } else {
+                      setIsAdmin(false);
+                      return false;
+                    }
+                  }
                 }
+              }
+            } else {
+              // Token not expired but verification failed - network error or other non-auth issue
+              // Keep the user logged in using the stored data
+              console.warn('Token verification failed but token not expired, maintaining session');
+              try {
+                const parsedData = JSON.parse(adminData);
+                const isAdminUser = parsedData.role === 'admin';
+                setIsAdmin(isAdminUser);
+                return isAdminUser;
               } catch (parseError) {
                 console.error('Error parsing admin data:', parseError);
               }
-              // If we can't determine status, default to false
-              setIsAdmin(false);
-              return false;
             }
           }
+        } catch (error) {
+          console.error('Error in admin authentication flow:', error);
+          // Don't immediately logout on errors - try to maintain session if possible
+          try {
+            const parsedData = JSON.parse(adminData);
+            const isAdminUser = parsedData.role === 'admin';
+            setIsAdmin(isAdminUser);
+            return isAdminUser;
+          } catch (parseError) {
+            console.error('Error parsing admin data:', parseError);
+          }
         }
-      } else {
-        setIsAdmin(false);
-        return false;
       }
+      
+      // Default fallback if all else fails
+      setIsAdmin(false);
+      return false;
     } finally {
       setIsLoading(false);
     }

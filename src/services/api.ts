@@ -493,7 +493,8 @@ class ApiService {
       });
     }
     
-    const token = localStorage.getItem('token');
+    // Use the custom token if provided (e.g., adminToken), otherwise fall back to regular token
+    const token = customToken || localStorage.getItem('token');
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     };
@@ -502,7 +503,7 @@ class ApiService {
       headers['Authorization'] = `Bearer ${token}`;
     }
     
-    console.log('Making API request to:', url.toString());
+    console.log('Making API request to:', url.toString(), 'with token type:', customToken ? 'custom token' : 'user token');
     
     const response = await fetch(url.toString(), {
       method: 'GET',
