@@ -258,30 +258,44 @@ class ProductService {
    * Also updates the corresponding category's item count if the category changes
    */
   async updateProduct(id: string, productData: Partial<Product>): Promise<Product> {
-    // If category is being updated, we need to refresh category counts
-    const shouldRefreshCategories = 'category' in productData;
-    
-    const updatedProduct = await api.put<Product>(`/api/products/${id}`, productData);
-    
-    // Process image URLs in the response
-    if (updatedProduct) {
-      updatedProduct.image = getFullImageUrl(updatedProduct.image);
-      if (updatedProduct.images) {
-        updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+    try {
+      // Get admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to update product');
+        throw new Error('Admin authentication required');
       }
-    }
-    
-    // Update category item counts if needed
-    if (shouldRefreshCategories) {
-      try {
-        // Refresh all categories to update item counts
-        await categoryService.getCategories();
-      } catch (error) {
-        console.error('Failed to refresh category item counts after product update:', error);
+      
+      // If category is being updated, we need to refresh category counts
+      const shouldRefreshCategories = 'category' in productData;
+      
+      // Pass the admin token and set isAdmin flag to true
+      const updatedProduct = await api.put<Product>(`/api/products/${id}`, productData, adminToken, true);
+      
+      // Process image URLs in the response
+      if (updatedProduct) {
+        updatedProduct.image = getFullImageUrl(updatedProduct.image);
+        if (updatedProduct.images) {
+          updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+        }
       }
+      
+      // Update category item counts if needed
+      if (shouldRefreshCategories) {
+        try {
+          // Refresh all categories to update item counts
+          await categoryService.getCategories();
+        } catch (error) {
+          console.error('Failed to refresh category item counts after product update:', error);
+        }
+      }
+      
+      return updatedProduct;
+    } catch (error) {
+      console.error('Failed to update product via API:', error);
+      throw error;
     }
-    
-    return updatedProduct;
   }
 
   /**
@@ -289,89 +303,144 @@ class ProductService {
    * Also updates category item counts after deletion
    */
   async deleteProduct(id: string): Promise<{ message: string }> {
-    // Get the product first to know which category needs updating
-    let categoryToUpdate: string | null = null;
     try {
-      const product = await this.getProductById(id);
-      categoryToUpdate = product.category;
-    } catch (error) {
-      console.error('Failed to get product before deletion:', error);
-    }
-    
-    // Delete the product
-    const result = await api.delete<{ message: string }>(`/api/products/${id}`);
-    
-    // Update category item counts if we know which category was affected
-    if (categoryToUpdate) {
-      try {
-        // Refresh all categories to update item counts
-        await categoryService.getCategories();
-      } catch (error) {
-        console.error('Failed to refresh category item counts after product deletion:', error);
+      // Get admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to delete product');
+        throw new Error('Admin authentication required');
       }
+      
+      // Get the product first to know which category needs updating
+      let categoryToUpdate: string | null = null;
+      try {
+        const product = await this.getProductById(id);
+        categoryToUpdate = product.category;
+      } catch (error) {
+        console.error('Failed to get product before deletion:', error);
+      }
+      
+      // Delete the product with admin token
+      const result = await api.delete<{ message: string }>(`/api/products/${id}`, adminToken, true);
+      
+      // Update category item counts if we know which category was affected
+      if (categoryToUpdate) {
+        try {
+          // Refresh all categories to update item counts
+          await categoryService.getCategories();
+        } catch (error) {
+          console.error('Failed to refresh category item counts after product deletion:', error);
+        }
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Failed to delete product via API:', error);
+      throw error;
     }
-    
-    return result;
   }
 
   /**
    * Upload a product image
    */
   async uploadProductImage(productId: string, imageFile: File): Promise<Product> {
-    const formData = new FormData();
-    formData.append('image', imageFile);
-    
-    const updatedProduct = await api.uploadFile<Product>(`/api/products/${productId}/image`, formData);
-    
-    // Process image URLs in the response
-    if (updatedProduct) {
-      updatedProduct.image = getFullImageUrl(updatedProduct.image);
-      if (updatedProduct.images) {
-        updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+    try {
+      // Get admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to upload product image');
+        throw new Error('Admin authentication required');
       }
+      
+      const formData = new FormData();
+      formData.append('image', imageFile);
+      
+      // Upload with admin token
+      const updatedProduct = await api.uploadFile<Product>(`/api/products/${productId}/image`, formData, adminToken, true);
+      
+      // Process image URLs in the response
+      if (updatedProduct) {
+        updatedProduct.image = getFullImageUrl(updatedProduct.image);
+        if (updatedProduct.images) {
+          updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+        }
+      }
+      
+      return updatedProduct;
+    } catch (error) {
+      console.error('Failed to upload product image via API:', error);
+      throw error;
     }
-    
-    return updatedProduct;
   }
 
   /**
    * Upload multiple product images (admin only)
    */
   async uploadProductImages(id: string, imageFiles: File[]): Promise<Product> {
-    const formData = new FormData();
-    
-    imageFiles.forEach((file, index) => {
-      formData.append('images', file);
-    });
-    
-    const updatedProduct = await api.uploadFile<Product>(`/api/products/${id}/images`, formData);
-    
-    // Process image URLs in the response
-    if (updatedProduct) {
-      updatedProduct.image = getFullImageUrl(updatedProduct.image);
-      if (updatedProduct.images) {
-        updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+    try {
+      // Get admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to upload multiple product images');
+        throw new Error('Admin authentication required');
       }
+      
+      const formData = new FormData();
+      
+      imageFiles.forEach((file, index) => {
+        formData.append('images', file);
+      });
+      
+      // Upload with admin token
+      const updatedProduct = await api.uploadFile<Product>(`/api/products/${id}/images`, formData, adminToken, true);
+      
+      // Process image URLs in the response
+      if (updatedProduct) {
+        updatedProduct.image = getFullImageUrl(updatedProduct.image);
+        if (updatedProduct.images) {
+          updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+        }
+      }
+      
+      return updatedProduct;
+    } catch (error) {
+      console.error('Failed to upload multiple product images via API:', error);
+      throw error;
     }
-    
-    return updatedProduct;
   }
 
   /**
    * Delete a product image (admin only)
    */
   async deleteProductImage(productId: string, imageIndex: number): Promise<Product> {
-    const updatedProduct = await api.delete<Product>(`/api/products/${productId}/image/${imageIndex}`);
-    
-    // Process image URLs in the response
-    if (updatedProduct) {
-      updatedProduct.image = getFullImageUrl(updatedProduct.image);
-      if (updatedProduct.images) {
-        updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+    try {
+      // Get admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to delete product image');
+        throw new Error('Admin authentication required');
       }
+      
+      // Delete with admin token
+      const updatedProduct = await api.delete<Product>(`/api/products/${productId}/image/${imageIndex}`, adminToken, true);
+      
+      // Process image URLs in the response
+      if (updatedProduct) {
+        updatedProduct.image = getFullImageUrl(updatedProduct.image);
+        if (updatedProduct.images) {
+          updatedProduct.images = updatedProduct.images.map(getFullImageUrl);
+        }
+      }
+      
+      return updatedProduct;
+    } catch (error) {
+      console.error('Failed to delete product image via API:', error);
+      throw error;
     }
-    
-    return updatedProduct;
   }
 }
 
