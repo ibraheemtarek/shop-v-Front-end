@@ -29,6 +29,7 @@ export interface PaymentResult {
 }
 
 export interface Order {
+  email: string;
   _id: string;
   user: string;
   orderItems: OrderItem[];
@@ -147,7 +148,23 @@ class OrderService {
       throw new Error('Admin authentication required');
     }
     
-    return api.put<Order>(`/api/orders/${id}/status`, { status }, adminToken);
+    // First try to find the order by ID to get the MongoDB _id if we're using orderNumber
+    try {
+      const orders = await this.getAdminOrders();
+      const order = orders.find(o => o.orderNumber === id || o._id === id);
+      
+      if (order) {
+        // Use the MongoDB _id for the API call
+        return api.put<Order>(`/api/orders/${order._id}/status`, { status }, adminToken);
+      }
+      
+      // If order not found, try with the provided ID directly
+      return api.put<Order>(`/api/orders/${id}/status`, { status }, adminToken);
+    } catch (error) {
+      console.error('Error finding order for status update:', error);
+      // Fallback to using the provided ID directly
+      return api.put<Order>(`/api/orders/${id}/status`, { status }, adminToken);
+    }
   }
 
   /**

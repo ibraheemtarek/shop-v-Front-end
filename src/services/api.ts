@@ -615,138 +615,186 @@ class ApiService {
    * Make a PUT request
    * @param endpoint - API endpoint
    * @param data - Request body data
+   * @param customToken - Optional custom token to use instead of localStorage token
+   * @param isAdmin - Whether to use admin token or user token
    * @returns Promise with response data
    */
-  async put<T>(endpoint: string, data: unknown, customToken?: string): Promise<T> {
+  async put<T>(endpoint: string, data: unknown, customToken?: string, isAdmin: boolean = false): Promise<T> {
     // Use the configured API base URL
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
-    console.log('Making PUT request to:', url);
-    const token = localStorage.getItem('token');
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-    };
+    console.log(`Making ${isAdmin ? 'admin' : 'user'} PUT request to:`, url);
     
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    // Check if we're in cross-origin mode
-    const crossOriginMode = API_CONFIG.isCrossOrigin();
-    if (crossOriginMode) {
-      // Add headers to help the server identify the client in cross-origin mode
-      headers['Origin'] = window.location.origin;
-      headers['X-Frontend-Domain'] = API_CONFIG.PRODUCTION_DOMAIN;
-      console.log('Added cross-origin headers for production environment');
-    }
-    
-    // CSRF protection has been disabled for this project
-    
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify(data),
-      credentials: 'include', // Include cookies for CSRF
-    });
-
-    if (!response.ok) {
-      // If unauthorized and we have a token, try to refresh it
-      if (response.status === 401 && localStorage.getItem('token') && 
-          !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/refresh')) {
-        // Clone the original request for retry
-        const originalRequest = {
-          method: 'PUT',
-          url: `${API_CONFIG.BASE_URL}${endpoint}`,
-          headers,
-          body: data
-        };
-        
-        // Try to refresh the token and retry the request
-        await this.handleTokenRefresh(originalRequest);
-        return this.put<T>(endpoint, data, customToken);
+    try {
+      // Use custom token if provided, otherwise get appropriate token based on isAdmin flag
+      const token = customToken || (isAdmin ? localStorage.getItem('adminToken') : localStorage.getItem('token'));
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
-
-      try {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `API error: ${response.status}`);
-      } catch (e) {
-        throw new Error(`API error: ${response.status}`);
+      
+      // Check if we're in cross-origin mode
+      const crossOriginMode = API_CONFIG.isCrossOrigin();
+      if (crossOriginMode) {
+        // Add headers to help the server identify the client in cross-origin mode
+        headers['Origin'] = window.location.origin;
+        headers['X-Frontend-Domain'] = API_CONFIG.PRODUCTION_DOMAIN;
+        console.log('Added cross-origin headers for production environment');
       }
+      
+      // Add token type indicator to help server distinguish between admin and user tokens
+      if (isAdmin) {
+        headers['X-Token-Type'] = 'admin';
+      }
+      
+      // CSRF protection has been disabled for this project
+      
+      // Add the request debugging info
+      console.debug('Sending request with headers:', JSON.stringify(headers));
+      
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(data),
+        credentials: 'include', // Include cookies for CSRF
+      });
+      
+      // Log response status and headers for debugging
+      console.debug(`Response status: ${response.status}`);
+      console.debug('Response headers:', [...response.headers.entries()]);
+
+      if (!response.ok) {
+        // If unauthorized, try to refresh the appropriate token based on isAdmin flag
+        if (response.status === 401 && 
+            ((isAdmin && localStorage.getItem('adminToken')) || (!isAdmin && localStorage.getItem('token'))) && 
+            !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/refresh')) {
+          // Clone the original request for retry
+          const originalRequest = {
+            method: 'PUT',
+            url: `${API_CONFIG.BASE_URL}${endpoint}`,
+            headers,
+            body: data
+          };
+          
+          // Try to refresh the token and retry the request
+          await this.handleTokenRefresh(originalRequest, isAdmin);
+          return this.put<T>(endpoint, data, customToken, isAdmin);
+        }
+
+        try {
+          const errorData = await response.json();
+          console.error('API error details:', errorData);
+          throw new Error(errorData.message || `API error: ${response.status}`);
+        } catch (e) {
+          throw new Error(`API error: ${response.status}`);
+        }
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error(`${isAdmin ? 'Admin' : 'User'} PUT request failed:`, error);
+      throw error;
     }
-    
-    return response.json();
   }
   
   /**
    * Make a DELETE request
    * @param endpoint - API endpoint
+   * @param customToken - Optional custom token to use instead of localStorage token
+   * @param isAdmin - Whether to use admin token or user token
    * @returns Promise with response data
    */
-  async delete<T>(endpoint: string, customToken?: string): Promise<T> {
+  async delete<T>(endpoint: string, customToken?: string, isAdmin: boolean = false): Promise<T> {
     // Use the configured API base URL
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
-    console.log('Making DELETE request to:', url);
-    const token = localStorage.getItem('token');
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-    };
+    console.log(`Making ${isAdmin ? 'admin' : 'user'} DELETE request to:`, url);
     
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    // Check if we're in cross-origin mode
-    const crossOriginMode = API_CONFIG.isCrossOrigin();
-    if (crossOriginMode) {
-      // Add headers to help the server identify the client in cross-origin mode
-      headers['Origin'] = window.location.origin;
-      headers['X-Frontend-Domain'] = API_CONFIG.PRODUCTION_DOMAIN;
-      console.log('Added cross-origin headers for production environment');
-    }
-    
-    // CSRF protection has been disabled for this project
-    
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers,
-      credentials: 'include', // Include cookies for CSRF
-    });
-
-    if (!response.ok) {
-      // If unauthorized and we have a token, try to refresh it
-      if (response.status === 401 && localStorage.getItem('token') && 
-          !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/refresh')) {
-        // Clone the original request for retry
-        const originalRequest = {
-          method: 'DELETE',
-          url: `${API_CONFIG.BASE_URL}${endpoint}`,
-          headers
-        };
-        
-        // Try to refresh the token and retry the request
-        await this.handleTokenRefresh(originalRequest);
-        return this.delete<T>(endpoint, customToken);
+    try {
+      // Use custom token if provided, otherwise get appropriate token based on isAdmin flag
+      const token = customToken || (isAdmin ? localStorage.getItem('adminToken') : localStorage.getItem('token'));
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
-
-      try {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `API error: ${response.status}`);
-      } catch (e) {
-        throw new Error(`API error: ${response.status}`);
+      
+      // Check if we're in cross-origin mode
+      const crossOriginMode = API_CONFIG.isCrossOrigin();
+      if (crossOriginMode) {
+        // Add headers to help the server identify the client in cross-origin mode
+        headers['Origin'] = window.location.origin;
+        headers['X-Frontend-Domain'] = API_CONFIG.PRODUCTION_DOMAIN;
+        console.log('Added cross-origin headers for production environment');
       }
+      
+      // Add token type indicator to help server distinguish between admin and user tokens
+      if (isAdmin) {
+        headers['X-Token-Type'] = 'admin';
+      }
+      
+      // CSRF protection has been disabled for this project
+      
+      // Add the request debugging info
+      console.debug('Sending request with headers:', JSON.stringify(headers));
+      
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include', // Include cookies for CSRF
+      });
+      
+      // Log response status and headers for debugging
+      console.debug(`Response status: ${response.status}`);
+      console.debug('Response headers:', [...response.headers.entries()]);
+
+      if (!response.ok) {
+        // If unauthorized, try to refresh the appropriate token based on isAdmin flag
+        if (response.status === 401 && 
+            ((isAdmin && localStorage.getItem('adminToken')) || (!isAdmin && localStorage.getItem('token'))) && 
+            !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/refresh')) {
+          // Clone the original request for retry
+          const originalRequest = {
+            method: 'DELETE',
+            url: `${API_CONFIG.BASE_URL}${endpoint}`,
+            headers
+          };
+          
+          // Try to refresh the token and retry the request
+          await this.handleTokenRefresh(originalRequest, isAdmin);
+          return this.delete<T>(endpoint, customToken, isAdmin);
+        }
+
+        try {
+          const errorData = await response.json();
+          console.error('API error details:', errorData);
+          throw new Error(errorData.message || `API error: ${response.status}`);
+        } catch (e) {
+          throw new Error(`API error: ${response.status}`);
+        }
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error(`${isAdmin ? 'Admin' : 'User'} DELETE request failed:`, error);
+      throw error;
     }
-    
-    return response.json();
   }
   /**
    * Upload a file or multiple files
    * @param endpoint - API endpoint
    * @param formData - FormData with files
+   * @param customToken - Optional custom token to use instead of localStorage token
+   * @param isAdmin - Whether to use admin token or user token
    * @returns Promise with response data
    */
-  async uploadFile<T>(endpoint: string, formData: FormData, customToken?: string): Promise<T> {
+  async uploadFile<T>(endpoint: string, formData: FormData, customToken?: string, isAdmin: boolean = false): Promise<T> {
     // Use the configured API base URL
     const url = `${API_CONFIG.BASE_URL}${endpoint}`;
-    console.log('Making file upload request to:', url);
+    console.log(`Making ${isAdmin ? 'admin' : 'user'} file upload request to:`, url);
     
     // Log the formData contents for debugging (without reading the file contents)
     try {
@@ -763,8 +811,8 @@ class ApiService {
       console.error('Error logging FormData:', error);
     }
     
-    // Use custom token if provided, otherwise fallback to localStorage token
-    const token = customToken || localStorage.getItem('token');
+    // Use custom token if provided, otherwise get appropriate token based on isAdmin flag
+    const token = customToken || (isAdmin ? localStorage.getItem('adminToken') : localStorage.getItem('token'));
     const headers: HeadersInit = {};
     
     if (token) {
@@ -778,6 +826,11 @@ class ApiService {
       headers['Origin'] = window.location.origin;
       headers['X-Frontend-Domain'] = API_CONFIG.PRODUCTION_DOMAIN;
       console.log('Added cross-origin headers for production environment');
+    }
+    
+    // Add token type indicator to help server distinguish between admin and user tokens
+    if (isAdmin) {
+      headers['X-Token-Type'] = 'admin';
     }
     
     try {

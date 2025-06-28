@@ -97,7 +97,7 @@ const AdminOrders = () => {
           return {
             id: order.orderNumber || order._id,
             customer: customerName,
-            email: 'customer@example.com', // API doesn't provide customer email directly
+            email: order.email, // API doesn't provide customer email directly
             date: orderDate,
             status: order.status || (order.isDelivered ? 'Delivered' : order.isPaid ? 'Processing' : 'Pending'),
             total: order.totalPrice,

@@ -157,7 +157,16 @@ class CategoryService {
    */
   async createCategory(categoryData: Omit<Category, '_id' | 'createdAt' | 'updatedAt'>): Promise<Category> {
     try {
-      const category = await api.post<Category>('/api/categories', categoryData);
+      // Use admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to create category');
+        throw new Error('Admin authentication required');
+      }
+      
+      // Pass the admin token and set isAdmin flag to true
+      const category = await api.post<Category>('/api/categories', categoryData, adminToken, true);
       
       // Process image URL
       if (category.image) {
@@ -176,7 +185,16 @@ class CategoryService {
    */
   async updateCategory(id: string, categoryData: Partial<Category>): Promise<Category> {
     try {
-      const category = await api.put<Category>(`/api/categories/${id}`, categoryData);
+      // Use admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to update category');
+        throw new Error('Admin authentication required');
+      }
+      
+      // Pass the admin token and set isAdmin flag to true
+      const category = await api.put<Category>(`/api/categories/${id}`, categoryData, adminToken, true);
       
       // Process image URL
       if (category.image) {
@@ -194,8 +212,22 @@ class CategoryService {
    * Delete a category (admin only)
    */
   async deleteCategory(id: string): Promise<{ message: string; success: boolean }> {
-    const response = await api.delete<{ message: string }>(`/api/categories/${id}`);
-    return { ...response, success: true };
+    try {
+      // Use admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to delete category');
+        throw new Error('Admin authentication required');
+      }
+      
+      // Pass the admin token and set isAdmin flag to true
+      const response = await api.delete<{ message: string }>(`/api/categories/${id}`, adminToken, true);
+      return { ...response, success: true };
+    } catch (error) {
+      console.error('Failed to delete category via API:', error);
+      throw error;
+    }
   }
 
   /**
@@ -206,8 +238,16 @@ class CategoryService {
     formData.append('image', imageFile);
     
     try {
+      // Use admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to upload category image');
+        throw new Error('Admin authentication required');
+      }
+      
       console.log(`Uploading image for category ${id}`, { fileName: imageFile.name, fileType: imageFile.type, fileSize: imageFile.size });
-      const category = await api.uploadFile<Category>(`/api/categories/${id}/image`, formData);
+      const category = await api.uploadFile<Category>(`/api/categories/${id}/image`, formData, adminToken, true);
       
       // Process image URL
       if (category.image) {
@@ -226,7 +266,15 @@ class CategoryService {
    */
   async deleteCategoryImage(id: string): Promise<Category> {
     try {
-      const category = await api.delete<Category>(`/api/categories/${id}/image`);
+      // Use admin token for admin-only operations
+      const adminToken = localStorage.getItem('adminToken');
+      
+      if (!adminToken) {
+        console.error('Admin token not found when trying to delete category image');
+        throw new Error('Admin authentication required');
+      }
+      
+      const category = await api.delete<Category>(`/api/categories/${id}/image`, adminToken, true);
       
       // Process image URL (should be empty after deletion, but process anyway)
       if (category.image) {
